@@ -17,15 +17,21 @@ Pyaar is a soft, moving theme for [Spicetify](https://spicetify.app). Every colo
 - **Glass pages:** home and playlist pages sit in frosted glass boxes.
 - **Music sync (optional):** the library's light follows the song's tempo, bass, build-ups and drops.
 
-## 💌 A note from the developer
+---
 
-> Pyaar is a personal project, and it's still growing.
->
-> I kept finding themes that were either **too dull** or **way too overboard**, so I made the one I wanted: soft, glassy and calm, with every color taken from the music.
->
-> More features are on the way, and I'll keep making it prettier with every update.
->
-> *Made with love, IndianStalker* 🤍
+<div align="center">
+
+### 💌 Developer note
+
+*This is a Personal Project. I plan on adding more features. Making it more prettier.*
+
+*I found other themes to either too dull or goes too overboard,*
+
+### Ultimately I've made this with love. 🤍
+
+</div>
+
+---
 
 ## Installing
 
