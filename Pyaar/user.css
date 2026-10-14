@@ -92,6 +92,12 @@
   background: transparent !important;
 }
 
+/* The top bar sits above the main view, so the search menu (which drops
+ * down over the main view) isn't hidden behind the main view's glass */
+#global-nav-bar {
+  z-index: 3;
+}
+
 /* The center is one black space: no grey header wash (hashed Spotify class:
  * may need updating after Spotify updates) */
 #main-view ._ddPhxHdxmpT13IbjTmr {
