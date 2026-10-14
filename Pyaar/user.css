@@ -1,0 +1,2027 @@
+@import url("https://fonts.googleapis.com/css2?family=Doto:wght@400..900&family=Inter:wght@300..600&display=swap");
+
+/* Pyaar
+ * Colors come from color.ini and are exposed as CSS variables,
+ * e.g. var(--spice-main), var(--spice-text), var(--spice-button).
+ */
+
+:root {
+  --mt-radius: 8px;
+
+  /* Bubble control buttons */
+  --glass-size: 38px;
+  --glass-play-size: 60px;
+  --glass-icon: rgba(255, 255, 255, 0.9);
+  --glass-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Starter tweak: softer corners on cards */
+.main-card-card {
+  border-radius: var(--mt-radius);
+}
+
+/* ------------------------------------------------------------------ */
+/* Bubble player controls                                              */
+/* ------------------------------------------------------------------ */
+
+/* Rotating angle that drives the slow flow of color in the bubbles */
+@property --glass-angle {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
+
+/* Registered so the song colors cross-fade when the track changes */
+@property --mt-art       { syntax: "<color>"; inherits: true; initial-value: #c9ced8; }
+@property --mt-art-light { syntax: "<color>"; inherits: true; initial-value: #eef0f5; }
+@property --mt-art-dark  { syntax: "<color>"; inherits: true; initial-value: #0f1013; }
+@property --mt-p1 { syntax: "<color>"; inherits: true; initial-value: #5aa8ff; }
+@property --mt-p2 { syntax: "<color>"; inherits: true; initial-value: #ff5f7a; }
+@property --mt-p3 { syntax: "<color>"; inherits: true; initial-value: #45e0b0; }
+@property --mt-p4 { syntax: "<color>"; inherits: true; initial-value: #b06bff; }
+@property --mt-p5 { syntax: "<color>"; inherits: true; initial-value: #ffd36b; }
+/* The artwork's colors in proportion, for the center light (theme.js) */
+@property --mt-r1 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+@property --mt-r2 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+@property --mt-r3 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+@property --mt-r4 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+@property --mt-r5 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+@property --mt-r6 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+@property --mt-r7 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+@property --mt-r8 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+@property --mt-r9 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+@property --mt-r10 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+@property --mt-r11 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+@property --mt-r12 { syntax: "<color>"; inherits: true; initial-value: #808080; }
+
+:root {
+  --mt-energy: 1;
+  transition: --mt-art 1.4s ease, --mt-art-light 1.4s ease, --mt-art-dark 1.4s ease,
+    --mt-p1 1.4s ease, --mt-p2 1.4s ease, --mt-p3 1.4s ease, --mt-p4 1.4s ease, --mt-p5 1.4s ease,
+    --mt-r1 1.4s ease, --mt-r2 1.4s ease, --mt-r3 1.4s ease, --mt-r4 1.4s ease, --mt-r5 1.4s ease, --mt-r6 1.4s ease, --mt-r7 1.4s ease, --mt-r8 1.4s ease, --mt-r9 1.4s ease, --mt-r10 1.4s ease, --mt-r11 1.4s ease, --mt-r12 1.4s ease;
+}
+
+/* ------------------------------------------------------------------ */
+/* The top bar and center: OLED black with soft silk light            */
+/* Top bar, main view and right sidebar sit on pure black. Behind them */
+/* theme.js draws the silk light (canvas#mt-silk): large abstract silk */
+/* surfaces folding slowly, lit only at their edges and folds, with an */
+/* iridescent sheen made from the cover's colors. Kept dim.            */
+/* ------------------------------------------------------------------ */
+
+.Root__top-container {
+  isolation: isolate;
+  background: #000 !important;
+}
+
+#mt-silk {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  filter: blur(0.4px);
+  pointer-events: none;
+}
+
+/* Let the light through the top bar and the center panels (not the library) */
+#global-nav-bar,
+#main-view > div,
+.Root__right-sidebar,
+.Root__top-container > [class]:has(> .Root__right-sidebar) {
+  background: transparent !important;
+}
+
+/* The center is one black space: no grey header wash (hashed Spotify class:
+ * may need updating after Spotify updates) */
+#main-view ._ddPhxHdxmpT13IbjTmr {
+  background: transparent !important;
+}
+
+/* Spotify's colored sticky header (appears when scrolling) gives way to the
+ * glass (hashed class: may need updating after Spotify updates) */
+#main-view .mkLf3oHSpzyF02_8URcp {
+  background: transparent !important;
+}
+
+/* Shortcut tiles stay plain on the glass */
+#main-view .Ut_wBpPPXvZ0dLV07qaf {
+  background: transparent !important;
+}
+
+#main-view .Ut_wBpPPXvZ0dLV07qaf:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* The center panel: one big box of dark smoked frosted glass, like Spotify's
+ * own panel. The light behind turns soft and milky under it and stays sharp
+ * around it; a thin light rim catches brighter toward the lower right. */
+#main-view {
+  position: relative;
+  isolation: isolate;
+  border-radius: 14px !important;
+  overflow: hidden;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.015), transparent 35%),
+    rgba(14, 14, 16, 0.18) !important;
+  backdrop-filter: blur(7px) saturate(1.1) brightness(1.03);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 18px 40px -20px rgba(0, 0, 0, 0.7) !important;
+}
+
+#main-view::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.02) 40%,
+    rgba(255, 255, 255, 0.02) 70%,
+    rgba(255, 255, 255, 0.12));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+
+/* A second, inner box around the shortcut tiles with the full effect: denser
+ * smoked glass, stronger blur, brighter rim. Drawn as ::before outside the
+ * grid's edges, so the tiles' layout is untouched (hashed class: may need
+ * updating after Spotify updates). */
+#main-view ._8jwKm1Yri1YCL_lRTb0 {
+  position: relative;
+  isolation: isolate;
+  /* clear space below the All / Music / Podcasts chips */
+  margin-top: 22px !important;
+  margin-bottom: 12px !important;
+}
+
+#main-view ._8jwKm1Yri1YCL_lRTb0::before {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  z-index: -1;
+  border-radius: 14px;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.04), transparent 35%),
+    rgba(14, 14, 16, 0.55);
+  backdrop-filter: blur(26px) saturate(1.2) brightness(1.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 18px 40px -20px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}
+
+#main-view ._8jwKm1Yri1YCL_lRTb0::after {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  z-index: -1;
+  border-radius: 14px;
+  padding: 1px;
+  background: linear-gradient(135deg,
+    rgba(255, 255, 255, 0.14),
+    rgba(255, 255, 255, 0.04) 40%,
+    rgba(255, 255, 255, 0.05) 70%,
+    rgba(255, 255, 255, 0.3));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+
+/* Playlist pages (Liked Songs, playlists, and other pages with the same
+ * header: albums, artists...) get the home look. Spotify's colored header
+ * and the gradient behind the play-button row give way to the big glass box,
+ * so the center light shows through; the header itself (cover, title,
+ * details) sits in an inner box of full-strength glass, like home's
+ * shortcut tiles. The bar that slides in when scrolling turns to frosted
+ * glass. */
+#main-view [data-testid="entity-header"] > div:empty,
+#main-view [data-testid$="-page"] > div:empty[style*="background"] {
+  background: none !important;
+  opacity: 0 !important;
+}
+
+#main-view [data-testid="entity-header"] > .contentSpacing {
+  position: relative;
+  isolation: isolate;
+}
+
+#main-view [data-testid="entity-header"] > .contentSpacing::before,
+#main-view [data-testid="entity-header"] > .contentSpacing::after {
+  content: "";
+  position: absolute;
+  /* around the cover and the title, below the top bar's space */
+  inset: 60px 6px -20px 6px;
+  z-index: -1;
+  border-radius: 14px;
+  pointer-events: none;
+}
+
+#main-view [data-testid="entity-header"] > .contentSpacing::before {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.04), transparent 35%),
+    rgba(14, 14, 16, 0.55);
+  backdrop-filter: blur(26px) saturate(1.2) brightness(1.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 18px 40px -20px rgba(0, 0, 0, 0.7);
+}
+
+#main-view [data-testid="entity-header"] > .contentSpacing::after {
+  padding: 1px;
+  background: linear-gradient(135deg,
+    rgba(255, 255, 255, 0.14),
+    rgba(255, 255, 255, 0.04) 40%,
+    rgba(255, 255, 255, 0.05) 70%,
+    rgba(255, 255, 255, 0.3));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+
+/* The bar that slides in at the top when scrolling: frosted glass instead
+ * of Spotify's solid color (Spotify still fades it in and out) */
+[data-testid="topbar"] > div:first-child {
+  background: rgba(14, 14, 16, 0.42) !important;
+  backdrop-filter: blur(22px) saturate(1.2);
+}
+
+[data-testid="topbar"] > div:first-child > * {
+  background: transparent !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Left library: a glass slab standing in hard light                   */
+/* The scene is a flowing liquid-glass ribbon (a WebGL shader in        */
+/* theme.js), standing upright and colored live with the song.s        */
+/* colors through luminance masks. The library sits on a slab of       */
+/* frosted glass that fills the panel: the scene is only seen blurred */
+/* through it, and light catches its edges. Rounded on top, square at  */
+/* the bottom to meet the banner.                                      */
+/* --mt-energy (0..1) scales the light: the hook for the music sync.   */
+/* ------------------------------------------------------------------ */
+
+#Desktop_LeftSidebar_Id {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  /* Rounded on top like the glass, square at the bottom to meet the banner */
+  border-radius: 20px 20px 0 0 !important;
+  /* Square, reaching the window's left edge and down to the banner */
+  margin-left: calc(var(--panel-gap, 8px) * -1);
+  margin-bottom: calc(var(--panel-gap, 8px) * -1);
+  background: color-mix(in srgb, var(--mt-art-dark) 80%, #040201) !important;
+}
+
+/* The scene: a flowing liquid-glass ribbon drawn by theme.js (canvas#mt-flow),
+ * standing upright behind the glass and colored by the song */
+#mt-flow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* If the shader can't run, a soft wash of the song's color stands in */
+html:not([data-mt-flow]) #Desktop_LeftSidebar_Id {
+  background:
+    radial-gradient(60% 40% at 40% 35%, color-mix(in srgb, var(--mt-art) 40%, transparent), transparent 70%),
+    radial-gradient(50% 35% at 65% 75%, color-mix(in srgb, var(--mt-p2) 30%, transparent), transparent 70%),
+    color-mix(in srgb, var(--mt-art-dark) 80%, #040201) !important;
+}
+
+/* The glass fills the whole panel; the scene is only seen through it */
+#Desktop_LeftSidebar_Id > nav {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0;
+  background: transparent !important;
+}
+
+/* The glass slab */
+#Desktop_LeftSidebar_Id > nav > div {
+  height: 100%;
+  border-radius: 20px 20px 0 0 !important;
+  background:
+    /* Fine grain on the glass surface */
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0.12 0 0 0 -0.04'/></filter><rect width='100%' height='100%' filter='url(%23g)'/></svg>") 0 0 / 160px 160px repeat,
+    /* A soft sheen where the light falls on the surface */
+    radial-gradient(90% 40% at 20% 0%, rgba(255, 255, 255, 0.09), transparent 70%),
+    linear-gradient(155deg, rgba(255, 255, 255, 0.06), transparent 40%),
+    /* The glass body: slightly smoky so text stays readable, warmed by the song */
+    color-mix(in srgb, var(--mt-art-dark) 22%, rgba(0, 0, 0, 0.1)) !important;
+  /* Frosting: heavy blur, lifted and slightly flattened like light
+   * scattering inside the glass */
+  backdrop-filter: blur(22px) saturate(1.25) brightness(1.05);
+  box-shadow:
+    /* Light catching the rim: brightest on top, then the lit left side */
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 1px 0 0 rgba(255, 255, 255, 0.22),
+    inset -1px 0 0 rgba(255, 255, 255, 0.1),
+    /* Thickness: a soft lighter band just inside the edge */
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    inset 0 16px 24px -16px rgba(255, 255, 255, 0.2),
+    inset 10px 0 20px -12px rgba(255, 255, 255, 0.08),
+    inset 0 0 36px rgba(255, 255, 255, 0.04),
+    /* Nothing around it now, so no outer shadow */
+    0 0 0 0 transparent !important;
+}
+
+#Desktop_LeftSidebar_Id > nav > div > div,
+#Desktop_LeftSidebar_Id .main-yourLibraryX-header {
+  background: transparent !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Library items: glass on hover                                       */
+/* Rows, filter chips and the Create button keep Spotify's own boxy    */
+/* look. Hovering one brings up a raised piece of glass in the song's  */
+/* color behind it: a bright thin rim, a glossy highlight along the    */
+/* top, soft light glowing up from the bottom, and a soft shadow.      */
+/* ------------------------------------------------------------------ */
+
+#Desktop_LeftSidebar_Id {
+  --mt-pill-bg:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--mt-art-light) 10%, rgba(255, 255, 255, 0.06)) 0%,
+      color-mix(in srgb, var(--mt-art) 8%, rgba(255, 255, 255, 0.02)) 55%,
+      color-mix(in srgb, var(--mt-art-light) 9%, rgba(255, 255, 255, 0.04)) 100%);
+  --mt-pill-shadow:
+    /* Soft rim along the top */
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    /* Faint glass edge all around */
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    /* Gentle highlight across the top */
+    inset 0 10px 16px -10px rgba(255, 255, 255, 0.14),
+    /* Light glowing softly up from the bottom */
+    inset 0 -14px 20px -14px color-mix(in srgb, var(--mt-art-light) 25%, transparent),
+    /* Barely lifted */
+    0 4px 12px -6px rgba(0, 0, 0, 0.25);
+}
+
+/* Rows: the glass sits behind the row, hidden until hovered */
+#Desktop_LeftSidebar_Id [data-encore-id="listRow"] {
+  isolation: isolate;
+}
+
+#Desktop_LeftSidebar_Id [data-encore-id="listRow"]::before {
+  content: "";
+  position: absolute;
+  inset: 2px 2px;
+  z-index: -1;
+  border-radius: 8px;
+  background: var(--mt-pill-bg);
+  box-shadow: var(--mt-pill-shadow);
+  backdrop-filter: blur(6px) saturate(1.3);
+  opacity: 0;
+  transform: scale(0.99);
+  transition: opacity 0.5s ease, transform 0.6s ease;
+  pointer-events: none;
+}
+
+#Desktop_LeftSidebar_Id [data-encore-id="listRow"]:hover::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* The glass replaces Spotify's own hover tint */
+#Desktop_LeftSidebar_Id [data-encore-id="listRow"]:hover::after {
+  opacity: 0 !important;
+}
+
+/* Filter chips and the Create button: same glass on hover */
+#Desktop_LeftSidebar_Id [data-encore-id="chip"] > span,
+#Desktop_LeftSidebar_Id button[aria-label="Create"] {
+  transition: box-shadow 0.5s ease, background 0.5s ease;
+}
+
+#Desktop_LeftSidebar_Id [data-encore-id="chip"]:hover > span,
+#Desktop_LeftSidebar_Id button[aria-label="Create"]:hover {
+  background: var(--mt-pill-bg) !important;
+  box-shadow: var(--mt-pill-shadow) !important;
+  backdrop-filter: blur(6px) saturate(1.3);
+}
+
+/* ------------------------------------------------------------------ */
+/* Glass player bar                                                    */
+/* The whole banner is one face of a clear glass cube turning slowly   */
+/* under a light:                                                      */
+/*  - clear interior lit by the song, with a steady middle glow        */
+/*  - a soft glow where light gathers low in the glass                 */
+/*  - as the cube turns, its side faces catch the light in turn, the   */
+/*    top face brightens, and a broad glow moves across the glass      */
+/* Only the current song's colors are used (--mt-art* from theme.js).  */
+/* ------------------------------------------------------------------ */
+
+/* Light on each face of the turning cube, animated by cube-turn */
+@property --cube-left  { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
+@property --cube-right { syntax: "<percentage>"; inherits: false; initial-value: 6%; }
+@property --cube-top   { syntax: "<percentage>"; inherits: false; initial-value: 6%; }
+@property --cube-band  { syntax: "<percentage>"; inherits: false; initial-value: 80%; }
+
+/* The banner's wrapper stays clear so the library meets the banner cleanly */
+.L5dM7nzQpMJtRkvZZBZL {
+  background-color: transparent !important;
+}
+
+.main-nowPlayingBar-container {
+  position: relative;
+  isolation: isolate;
+  border-radius: 0;
+  /* Reach past the panel gap so the glass meets the window's left, right and bottom edges */
+  margin: 0 calc(var(--panel-gap, 8px) * -1) calc(var(--panel-gap, 8px) * -1);
+  overflow: clip;
+
+  background:
+    /* Light gathered low in the glass: a soft glow rising from the bottom */
+    linear-gradient(0deg,
+      color-mix(in srgb, var(--mt-art) calc(var(--cube-band) * 0.3), transparent) 0,
+      color-mix(in srgb, var(--mt-art) calc(var(--cube-band) * 0.18), transparent) 22%,
+      color-mix(in srgb, var(--mt-art) calc(var(--cube-band) * 0.07), transparent) 50%,
+      transparent 80%),
+
+    /* Left side face turning into the light */
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--mt-art-light) var(--cube-left), transparent) 0,
+      color-mix(in srgb, var(--mt-art) calc(var(--cube-left) * 0.6), transparent) 9%,
+      color-mix(in srgb, var(--mt-art) calc(var(--cube-left) * 0.15), transparent) 20%,
+      transparent 32%),
+
+    /* Right side face turning into the light */
+    linear-gradient(270deg,
+      color-mix(in srgb, var(--mt-art-light) var(--cube-right), transparent) 0,
+      color-mix(in srgb, var(--mt-art) calc(var(--cube-right) * 0.6), transparent) 9%,
+      color-mix(in srgb, var(--mt-art) calc(var(--cube-right) * 0.15), transparent) 20%,
+      transparent 32%),
+
+    /* Top face catching light from above */
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--mt-art-light) var(--cube-top), transparent),
+      transparent 45%),
+
+    /* A steady glow across the middle, so it never falls dark between turns */
+    radial-gradient(70% 140% at 50% 100%,
+      color-mix(in srgb, var(--mt-art) 18%, transparent),
+      transparent 75%),
+
+    /* Clear interior, lit by the song's color */
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--mt-art) 21%, var(--mt-art-dark)),
+      color-mix(in srgb, var(--mt-art) 12%, var(--mt-art-dark))) !important;
+
+  animation: cube-turn 20s ease-in-out infinite;
+}
+
+/* Broad glow from the light passing through the glass; it travels across the
+ * banner as the cube turns. Transform/opacity only, so it stays cheap. */
+.main-nowPlayingBar-container::before {
+  content: "";
+  position: absolute;
+  inset: 0 -30%;
+  z-index: 0;
+  background:
+    radial-gradient(22% 90% at 50% 100%, color-mix(in srgb, var(--mt-art-light) 22%, transparent), transparent 70%),
+    radial-gradient(45% 150% at 50% 100%, color-mix(in srgb, var(--mt-art) 26%, transparent), transparent 70%);
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: cube-glow 20s ease-in-out infinite;
+}
+
+/* Soft reflection on the front face, moving against the glow for depth */
+.main-nowPlayingBar-container::after {
+  content: "";
+  position: absolute;
+  inset: 0 -30%;
+  z-index: 0;
+  background: linear-gradient(100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--mt-art-light) 7%, transparent) 44%,
+    color-mix(in srgb, var(--mt-art-light) 9%, transparent) 50%,
+    transparent 64%);
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: cube-reflect 20s ease-in-out infinite;
+}
+
+/* One full turn: front, left face to the light, front with the top lit,
+ * right face to the light, back to front. */
+@keyframes cube-turn {
+  0%, 100% { --cube-left: 0%;  --cube-right: 6%;  --cube-top: 6%;  --cube-band: 80%; }
+  25%      { --cube-left: 52%; --cube-right: 0%;  --cube-top: 3%;  --cube-band: 58%; }
+  50%      { --cube-left: 4%;  --cube-right: 4%;  --cube-top: 24%; --cube-band: 100%; }
+  75%      { --cube-left: 0%;  --cube-right: 52%; --cube-top: 4%;  --cube-band: 62%; }
+}
+
+@keyframes cube-glow {
+  0%, 100% { transform: translateX(0);    opacity: 0.7; }
+  25%      { transform: translateX(-24%); opacity: 1; }
+  50%      { transform: translateX(0);    opacity: 0.55; }
+  75%      { transform: translateX(24%);  opacity: 1; }
+}
+
+@keyframes cube-reflect {
+  0%, 100% { transform: translateX(0);    opacity: 0.6; }
+  25%      { transform: translateX(18%);  opacity: 1; }
+  50%      { transform: translateX(0);    opacity: 0.4; }
+  75%      { transform: translateX(-18%); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-nowPlayingBar-container,
+  .main-nowPlayingBar-container::before,
+  .main-nowPlayingBar-container::after {
+    animation: none;
+  }
+}
+
+/* Fonts from the reference: a dot-matrix face for numbers and titles,
+ * and a clean, light sans-serif for everything else */
+.main-nowPlayingBar-container,
+#Desktop_LeftSidebar_Id,
+body {
+  --mt-font-text: "Inter", SpotifyMixUI, CircularSp-Arab, CircularSp-Hebr, CircularSp-Cyrl, CircularSp-Grek, sans-serif;
+  --mt-font-dots: "Doto", "Inter", monospace;
+}
+
+body,
+body :is(span, p, a, h1, h2, h3, h4, button, input, div, li, label) {
+  font-family: var(--mt-font-text) !important;
+  letter-spacing: -0.005em;
+}
+
+/* Dot-matrix: the timestamps and the library title */
+[data-testid="playback-position"],
+[data-testid="playback-position"] *,
+[data-testid="playback-duration"],
+[data-testid="playback-duration"] *,
+.main-yourLibraryX-header h1 {
+  font-family: var(--mt-font-dots) !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.04em;
+}
+
+[data-testid="playback-position"],
+[data-testid="playback-duration"] {
+  font-size: 14px !important;
+}
+
+.main-yourLibraryX-header h1 {
+  font-size: 20px !important;
+}
+
+/* ------------------------------------------------------------------ */
+/* Like button: a glass heart                                          */
+/* A thick, clear glass heart (theme.js, heartLike, builds .mt-gh in   */
+/* the button). Its rounded edges bend and magnify the banner's light  */
+/* behind it (backdrop refraction, #mt-heart-lens), with a crisp white */
+/* rim, glossy highlights and a band of the song's colors caught in    */
+/* the thick edge. On hover it glides sideways and back while a broad  */
+/* glare sweeps across, like a slab of glass catching the light.       */
+/* Liked: saturated pink glass (fixed hot pinks, like the love burst; */
+/* the one exception to the song's colors), sitting bigger.          */
+/* ------------------------------------------------------------------ */
+
+.mt-like {
+  position: relative;
+  width: 30px !important;
+  min-width: 30px !important;
+}
+
+/* Spotify's own icon (and its green check when liked) gives way to the heart */
+.mt-like > :not(.mt-gh),
+.mt-like svg:not(.mt-gh-art) {
+  opacity: 0 !important;
+}
+
+/* The glass heart: 24 x 22.5 px, with a margin of backdrop around it so
+ * the edges have something to bend in */
+.mt-gh {
+  /* the glass's colors: the song's, until it's liked */
+  --gh-f0: var(--mt-art-light);
+  --gh-f1: var(--mt-p1);
+  --gh-f2: var(--mt-art);
+  --gh-b0: var(--mt-p1);
+  --gh-b1: var(--mt-p3);
+  --gh-b2: var(--mt-p2);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34px;
+  height: 32px;
+  margin: -16px 0 0 -17px;
+  pointer-events: none;
+  transition: scale 0.45s var(--glass-spring);
+}
+
+.mt-gh-lens,
+.mt-gh-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The glass body: the backdrop seen through it, bent at the edges */
+.mt-gh-lens {
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 32'><path transform='translate(5 4.75) scale(0.75)' d='M16 28.5C6 21.5 1.5 15.8 1.5 9.8 1.5 5.2 5 1.8 9.2 1.8c2.9 0 5.4 1.6 6.8 4 1.4-2.4 3.9-4 6.8-4 4.2 0 7.7 3.4 7.7 8 0 6-4.5 11.7-14.5 18.7z'/></svg>") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 32'><path transform='translate(5 4.75) scale(0.75)' d='M16 28.5C6 21.5 1.5 15.8 1.5 9.8 1.5 5.2 5 1.8 9.2 1.8c2.9 0 5.4 1.6 6.8 4 1.4-2.4 3.9-4 6.8-4 4.2 0 7.7 3.4 7.7 8 0 6-4.5 11.7-14.5 18.7z'/></svg>") center / 100% 100% no-repeat;
+  /* (without the lens filter, plain frosted glass) */
+  backdrop-filter: blur(1.2px) saturate(1.8) brightness(1.12);
+  backdrop-filter: url(#mt-heart-lens) blur(0.5px) saturate(1.9) brightness(1.15);
+  /* Clear glass: nearly transparent in the middle, milkier toward the
+   * thick edge */
+  background: radial-gradient(ellipse 60% 58% at 50% 50%,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.08) 55%,
+    rgba(255, 255, 255, 0.2) 100%);
+  transition: background 0.3s ease;
+}
+
+.mt-gh-art {
+  overflow: visible;
+}
+
+/* Drawn layers (inside the SVG). Colors come from the song. */
+.mt-gh-band  { opacity: 0.75; mix-blend-mode: screen; }
+.mt-gh-depth { opacity: 0; transition: opacity 0.3s ease; }
+.mt-gh-fill  { opacity: 0; transition: opacity 0.2s ease; }
+.mt-gh-rim   { opacity: 0.9; }
+.mt-gh-spec  { opacity: 0.9; }
+.mt-gh-glare { opacity: 0; mix-blend-mode: screen; }
+
+.mt-like:hover .mt-gh {
+  scale: 1.1;
+}
+
+/* Liked: saturated pink candy glass, like the anime love burst's pinks,
+ * sitting bigger, with a soft pink glow. Filled hearts (Pyaar Settings)
+ * match it. */
+.mt-like[aria-checked="true"] .mt-gh,
+.mt-gh-filled,
+.mt-gh.mt-gh-love {
+  --gh-f0: #ffd6f7;
+  --gh-f1: #ff40e4;
+  --gh-f2: #d8127a;
+  --gh-b0: #ff8cf6;
+  --gh-b1: #9654ff;
+  --gh-b2: #ff2496;
+}
+
+.mt-like[aria-checked="true"] .mt-gh-art,
+.mt-gh-filled .mt-gh-art {
+  filter: drop-shadow(0 0 2.5px rgb(255 64 228 / 0.55));
+}
+
+.mt-like[aria-checked="true"] .mt-gh {
+  scale: 1.28;
+  transition: scale 0.2s ease;
+}
+
+.mt-like[aria-checked="true"] .mt-gh-lens,
+.mt-gh-filled .mt-gh-lens {
+  background: radial-gradient(ellipse 70% 65% at 45% 40%,
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0.12) 100%);
+}
+
+.mt-like[aria-checked="true"] .mt-gh-fill,
+.mt-gh-filled .mt-gh-fill  { opacity: 0.85; filter: saturate(1.25); }
+.mt-like[aria-checked="true"] .mt-gh-depth,
+.mt-gh-filled .mt-gh-depth { opacity: 0.4; }
+.mt-like[aria-checked="true"] .mt-gh-band,
+.mt-gh-filled .mt-gh-band  { opacity: 0.9; }
+
+/* Hover: the reference's motion. The slab glides to the side and back;
+ * on the way back a broad glare sweeps across it and the rim flares.
+ * theme.js lets the current pass finish after the pointer leaves. */
+.mt-gh.mt-gh-play {
+  animation: mt-gh-glide 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.mt-gh.mt-gh-play .mt-gh-glare {
+  animation: mt-gh-glare 3.2s ease-in-out infinite;
+}
+
+.mt-gh.mt-gh-play .mt-gh-rim,
+.mt-gh.mt-gh-play .mt-gh-spec {
+  animation: mt-gh-flare 3.2s ease-in-out infinite;
+}
+
+@keyframes mt-gh-glide {
+  0%, 8%   { translate: 0 0; }
+  42%, 52% { translate: 2.5px -0.5px; }
+  86%, 100% { translate: 0 0; }
+}
+
+@keyframes mt-gh-glare {
+  0%, 46%  { opacity: 0; transform: translateX(-28px); }
+  56%      { opacity: 1; }
+  84%      { opacity: 0.9; }
+  96%, 100% { opacity: 0; transform: translateX(28px); }
+}
+
+@keyframes mt-gh-flare {
+  0%, 8%, 92%, 100% { filter: brightness(1); }
+  45%      { filter: brightness(1.15); }
+  66%      { filter: brightness(1.45); }
+}
+
+/* ------------------------------------------------------------------ */
+/* Love burst: liking a song (theme.js, loveBurst)                     */
+/* The glass heart swells and charges up in hot magenta, then the     */
+/* burst plays over the center. Its colors are fixed on purpose:      */
+/* anime hot pink and violet, not the song's.                         */
+/* ------------------------------------------------------------------ */
+
+/* The heart: bigger, hot and glowing, pulsing as it charges */
+.mt-like .mt-gh.mt-gh-love {
+  z-index: 3;
+  scale: 1.75;
+  filter: drop-shadow(0 0 4px rgb(255 64 228)) drop-shadow(0 0 12px rgb(255 36 150 / 0.85));
+  transition: scale 0.5s var(--glass-spring), filter 0.8s ease;
+}
+
+.mt-gh.mt-gh-love .mt-gh-lens,
+.mt-gh.mt-gh-love .mt-gh-art {
+  animation: mt-heart-charge 0.72s ease-in-out;
+}
+
+.mt-gh.mt-gh-love .mt-gh-fill  { opacity: 0.95; filter: saturate(1.3) brightness(1.1); }
+.mt-gh.mt-gh-love .mt-gh-depth { opacity: 0.3; }
+
+/* Charging: quick swells that build, the last one the biggest */
+@keyframes mt-heart-charge {
+  0%   { transform: scale(1); }
+  25%  { transform: scale(1.08); }
+  38%  { transform: scale(0.98); }
+  58%  { transform: scale(1.14); }
+  70%  { transform: scale(1.02); }
+  86%  { transform: scale(1.24); }
+  100% { transform: scale(1); }
+}
+
+/* The whole theme turns hot for a moment: snaps in, cools back slowly */
+html[data-mt-love] {
+  --mt-art: #ff40e4 !important;
+  --mt-art-light: #ffb8f5 !important;
+  --mt-art-dark: #1e0c52 !important;
+  --mt-p1: #ff40e4 !important;
+  --mt-p2: #ff2496 !important;
+  --mt-p3: #9654ff !important;
+  --mt-p4: #ff8cf6 !important;
+  --mt-p5: #7a5cff !important;
+  --mt-r1: #ff40e4 !important;
+  --mt-r2: #ff6af2 !important;
+  --mt-r3: #ff2496 !important;
+  --mt-r4: #ff40e4 !important;
+  --mt-r5: #c04dff !important;
+  --mt-r6: #9654ff !important;
+  --mt-r7: #ff6af2 !important;
+  --mt-r8: #ff40d8 !important;
+  --mt-r9: #ff8cf6 !important;
+  --mt-r10: #7a5cff !important;
+  --mt-r11: #ff2496 !important;
+  --mt-r12: #ff40e4 !important;
+  transition-duration: 0.4s;
+}
+
+html[data-mt-love-out] {
+  transition-duration: 2.2s;
+}
+
+/* The burst itself: two canvases over the window. The light behind with a
+ * screen blend (it only adds light); the solid hearts and flood in front */
+#mt-love,
+#mt-love-front {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
+#mt-love {
+  mix-blend-mode: screen;
+}
+
+#mt-love-front {
+  z-index: 10000;
+}
+
+/* Taller player bar so the bigger blobs fit; content sits above the glass layers */
+.main-nowPlayingBar-nowPlayingBar {
+  position: relative;
+  z-index: 1;
+  height: 104px !important;
+  padding-inline: 12px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Progress bar: a soft glass slider with colored light inside         */
+/* Like the glowing toggle in the reference, the light inside the      */
+/* glass takes the song's colors: it travels between two cover colors  */
+/* as the song plays, and cross-fades to another pair, a little dimmer, */
+/* while paused. The knob is a milky glass bead like the play button.  */
+/* theme.js moves --mt-pos every frame from the player's clock and     */
+/* sets <html data-mt-paused>; Spotify's own value is the fallback.    */
+/* ------------------------------------------------------------------ */
+
+/* Registered so the light's color cross-fades */
+@property --mt-tl {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #c9ced8;
+}
+
+[data-testid="playback-progressbar"] .progress-bar {
+  --mt-at: var(--mt-pos, var(--progress-bar-transform));
+  --progress-bar-height: 6px;
+  --progress-bar-radius: 999px;
+  /* Playing: first cover color early on, third by the end */
+  --mt-tl: color-mix(in oklch, var(--mt-p1), var(--mt-p3) var(--mt-at));
+  height: 18px;
+  overflow: visible !important;
+  transition: --mt-tl 0.9s ease;
+}
+
+/* Paused: the light shifts to the cover's other colors */
+html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
+  --mt-tl: color-mix(in oklch, var(--mt-p2), var(--mt-p4) var(--mt-at));
+}
+
+/* The glass track, with soft colored light filling it up to the knob,
+ * gathering toward the knob like the light in the toggle */
+[data-testid="playback-progressbar"] .x-progressBar-progressBarBg {
+  height: 6px !important;
+  border-radius: 999px !important;
+  overflow: visible !important;
+  background:
+    /* Soft sheen across the top of the glass */
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 70%),
+    /* The light inside, up to the playback position */
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--mt-tl) 22%, rgba(255, 255, 255, 0.2)) 0,
+      color-mix(in srgb, var(--mt-tl) 38%, rgba(255, 255, 255, 0.3)) calc(var(--mt-at) * 0.7),
+      color-mix(in srgb, var(--mt-tl) 62%, rgba(255, 255, 255, 0.4)) var(--mt-at))
+      0 0 / var(--mt-at) 100% no-repeat,
+    rgba(255, 255, 255, 0.07) !important;
+  backdrop-filter: blur(10px) saturate(1.3);
+  box-shadow: inset 0 0 2px rgba(255, 255, 255, 0.06) !important;
+  filter: blur(0.3px);
+}
+
+/* The knob: a milky glass bead, soft like the play button, glowing with
+ * the light's color */
+[data-testid="playback-progressbar"] .x-progressBar-progressBarBg::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: var(--mt-at);
+  width: 14px;
+  height: 14px;
+  translate: -50% -50%;
+  z-index: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(52% 38% at 38% 28%, rgba(255, 255, 255, 0.6), transparent 75%),
+    radial-gradient(closest-side,
+      rgba(255, 255, 255, 0.78) 0%,
+      color-mix(in srgb, var(--mt-tl) 22%, rgba(255, 255, 255, 0.68)) 55%,
+      color-mix(in srgb, var(--mt-tl) 34%, rgba(255, 255, 255, 0.52)) 82%,
+      color-mix(in srgb, var(--mt-tl) 20%, rgba(255, 255, 255, 0.5)) 100%);
+  box-shadow:
+    inset 0 0 4px color-mix(in srgb, var(--mt-tl) 40%, transparent),
+    0 0 10px color-mix(in srgb, var(--mt-tl) 40%, transparent),
+    0 0 20px color-mix(in srgb, var(--mt-tl) 18%, transparent);
+  filter: blur(0.35px);
+  transition: scale 0.35s var(--glass-spring);
+  pointer-events: none;
+}
+
+/* The knob's rim: a faint shimmer of the song's colors, drifting slowly */
+[data-testid="playback-progressbar"] .x-progressBar-progressBarBg::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: var(--mt-at);
+  width: 14px;
+  height: 14px;
+  translate: -50% -50%;
+  z-index: 2;
+  border-radius: 50%;
+  background: conic-gradient(from var(--glass-angle),
+    var(--mt-art-light), var(--mt-p1), #ffffff, var(--mt-p3), var(--mt-p2), var(--mt-art-light));
+  -webkit-mask: radial-gradient(closest-side, transparent 64%, #000 92%, transparent 100%);
+  mask: radial-gradient(closest-side, transparent 64%, #000 92%, transparent 100%);
+  mix-blend-mode: screen;
+  filter: blur(1.2px);
+  opacity: 0.3;
+  animation: glass-spin 40s linear infinite;
+  transition: scale 0.35s var(--glass-spring);
+  pointer-events: none;
+}
+
+[data-testid="playback-progressbar"]:hover .x-progressBar-progressBarBg::before,
+[data-testid="playback-progressbar"]:hover .x-progressBar-progressBarBg::after {
+  scale: 1.15;
+}
+
+/* Spotify's own fill, hover preview and dot give way to the glass slider */
+[data-testid="playback-progressbar"] .x-progressBar-fillColor {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+[data-testid="playback-progressbar"] .x-progressBar-sliderArea > :not(.x-progressBar-fillColor) {
+  background: transparent !important;
+}
+
+[data-testid="playback-progressbar"] [data-testid="progress-bar-handle"] {
+  opacity: 0 !important;
+}
+
+/* Volume bar: quiet, in the song's colors, no glow */
+.main-nowPlayingBar-right .x-progressBar-progressBarBg {
+  background-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.main-nowPlayingBar-right .x-progressBar-fillColor {
+  background: color-mix(in srgb, var(--mt-art-light) 85%, transparent) !important;
+  box-shadow: none !important;
+}
+
+/* Right-hand icons pick up the art's light on hover */
+.main-nowPlayingBar-right button:hover {
+  color: var(--mt-art-light) !important;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--mt-art) 80%, transparent));
+}
+
+/* Let the floating bubbles breathe without being clipped */
+.player-controls,
+.player-controls__buttons,
+.player-controls__left,
+.player-controls__right {
+  overflow: visible !important;
+}
+
+.player-controls__buttons {
+  gap: 20px;
+  align-items: center;
+  padding-block: 6px 4px;
+}
+
+.player-controls__left,
+.player-controls__right {
+  gap: 14px;
+  align-items: center;
+}
+
+/* Each control is a milky glass pearl lit softly from above, modeled on the
+ * reference render:
+ *  - light scatters inside the glass, so the center glows milky white
+ *  - just inside the edge the glass looks a little deeper and clearer
+ *  - at the very edge, where the surface turns away, it brightens again
+ *  - thin-film color shimmers along the rim, in the song's colors
+ *    (--mt-art*, --mt-p1..5 from theme.js), drifting slowly
+ * The banner shows through it. No folds, no sharp highlights. */
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+) {
+  position: relative;
+  isolation: isolate;
+  display: grid !important;
+  place-items: center;
+  place-content: stretch !important;
+  width: var(--glass-size) !important;
+  height: var(--glass-size) !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: var(--glass-icon) !important;
+  border-radius: 48% 52% 55% 45% / 50% 45% 55% 50%;
+
+  /* The pearl's body. Rather than laying white over the banner, the glass
+   * brightens and softens what's behind it (backdrop-filter) and adds only a
+   * light tint of the banner's own color, so it blends into the bar. */
+  background:
+    radial-gradient(closest-side at 50% 50%,
+      color-mix(in srgb, var(--mt-art-light) 17%, transparent) 0%,
+      color-mix(in srgb, var(--mt-art-light) 11%, transparent) 40%,
+      color-mix(in srgb, var(--mt-art-light) 3%, transparent) 70%,
+      color-mix(in srgb, var(--mt-art-light) 10%, transparent) 88%,
+      color-mix(in srgb, var(--mt-art-light) 16%, transparent) 97%,
+      transparent 100%) !important;
+  backdrop-filter: blur(8px) brightness(1.22) saturate(1.2);
+
+  box-shadow:
+    inset 0 0 8px color-mix(in srgb, var(--mt-art-light) 16%, transparent),
+    0 0 14px color-mix(in srgb, var(--mt-art) 10%, transparent);
+
+  animation:
+    glass-float 9s ease-in-out infinite,
+    glass-morph 16s ease-in-out infinite,
+    glass-spin 40s linear infinite;
+  transition:
+    scale 0.6s var(--glass-spring),
+    filter 0.6s ease,
+    opacity 0.4s ease,
+    box-shadow 0.9s ease,
+    color 0.6s ease;
+}
+
+/* Thin-film shimmer on the rim, in the song's colors, drifting slowly */
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+)::before {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  transform: none !important;
+  border-radius: inherit !important;
+  background: conic-gradient(from calc(var(--glass-angle) * 0.7),
+    var(--mt-art-light),
+    var(--mt-p1),
+    rgba(255, 255, 255, 0.95),
+    var(--mt-p3),
+    var(--mt-art),
+    var(--mt-p2),
+    var(--mt-art-light)) !important;
+  -webkit-mask: radial-gradient(closest-side, transparent 74%, #000 93%, transparent 100%);
+  mask: radial-gradient(closest-side, transparent 74%, #000 93%, transparent 100%);
+  mix-blend-mode: screen;
+  filter: blur(2px);
+  opacity: 0.32;
+  pointer-events: none;
+  transition: opacity 0.8s ease;
+}
+
+/* The same colors refracted a little inside the edge, offset toward the
+ * lower side like the inner color bands in the reference. Also replaces
+ * Spotify's own "active" dot. */
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+)::after {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 1;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  transform: none !important;
+  border-radius: inherit !important;
+  background: conic-gradient(from calc(var(--glass-angle) * -0.5) at 55% 58%,
+    transparent 0deg,
+    var(--mt-p2) 50deg,
+    transparent 100deg,
+    var(--mt-art-light) 170deg,
+    transparent 220deg,
+    var(--mt-p1) 290deg,
+    transparent 340deg) !important;
+  -webkit-mask: radial-gradient(closest-side at 46% 44%, transparent 58%, #000 76%, transparent 90%);
+  mask: radial-gradient(closest-side at 46% 44%, transparent 58%, #000 76%, transparent 90%);
+  mix-blend-mode: screen;
+  filter: blur(2.5px);
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+/* Keep Spotify's own icon on top of the glass */
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+) > * {
+  position: relative;
+  z-index: 2;
+  display: grid !important;
+  place-items: center;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  color: inherit !important;
+  transform: none !important;
+  border-radius: inherit !important;
+}
+
+/* Soft lighting: a broad key light from above, a gentle core glow from the
+ * light scattering inside, and faint shading underneath */
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+) > *::before {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: -1;
+  display: block !important;
+  border-radius: inherit !important;
+  background:
+    radial-gradient(60% 45% at 36% 26%, rgba(255, 255, 255, 0.17), transparent 75%),
+    radial-gradient(35% 35% at 50% 50%, rgba(255, 255, 255, 0.06), transparent 70%),
+    radial-gradient(70% 50% at 60% 92%, rgba(20, 20, 40, 0.08), transparent 70%) !important;
+  filter: blur(3px);
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 0.8s ease, filter 0.6s ease;
+}
+
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+) svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor !important;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.3));
+  transition: filter 0.6s ease;
+}
+
+/* The play button: bigger, and the gentlest of all, with everything a
+ * little more diffused and slower breathing */
+.player-controls__buttons button[data-testid="control-button-playpause"] {
+  width: var(--glass-play-size) !important;
+  height: var(--glass-play-size) !important;
+  backdrop-filter: blur(12px) brightness(1.22) saturate(1.2);
+  box-shadow:
+    inset 0 0 12px color-mix(in srgb, var(--mt-art-light) 15%, transparent),
+    0 0 22px color-mix(in srgb, var(--mt-art) 10%, transparent);
+  animation-duration: 12s, 22s, 48s;
+}
+
+.player-controls__buttons button[data-testid="control-button-playpause"]::before {
+  filter: blur(3.5px);
+  opacity: 0.3;
+}
+
+.player-controls__buttons button[data-testid="control-button-playpause"]::after {
+  filter: blur(4px);
+}
+
+.player-controls__buttons button[data-testid="control-button-playpause"] > *::before {
+  filter: blur(5px);
+}
+
+.player-controls__buttons button[data-testid="control-button-playpause"] svg {
+  width: 24px;
+  height: 24px;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.22));
+}
+
+/* The Home button: the same milky pearl as the player controls (it shares
+ * all their rules above), a little bigger than the skip buttons. The top bar
+ * is black rather than lit like the banner, so the pearl carries a touch
+ * more of its own milky light. */
+#global-nav-bar div:has(form) > button.main-globalNav-link-icon {
+  --glass-size: 44px;
+  margin-inline-end: 4px;
+  background:
+    radial-gradient(closest-side at 50% 50%,
+      color-mix(in srgb, var(--mt-art-light) 24%, transparent) 0%,
+      color-mix(in srgb, var(--mt-art-light) 15%, transparent) 40%,
+      color-mix(in srgb, var(--mt-art-light) 6%, transparent) 70%,
+      color-mix(in srgb, var(--mt-art-light) 14%, transparent) 88%,
+      color-mix(in srgb, var(--mt-art-light) 22%, transparent) 97%,
+      transparent 100%) !important;
+  /* Centered on the search bar, floating evenly around that center (the
+   * controls' float only drifts upward, which made it sit high) */
+  align-self: center;
+  animation-name: mt-home-float, glass-morph, glass-spin;
+  animation-delay: -4s, -9s, -18s;
+}
+
+@keyframes mt-home-float {
+  0%, 100% { translate: 0 0; }
+  25%      { translate: 0.4px -1.2px; }
+  50%      { translate: 0 0.4px; }
+  75%      { translate: -0.4px -0.8px; }
+}
+
+#global-nav-bar div:has(form) > button.main-globalNav-link-icon::before {
+  opacity: 0.42;
+}
+
+#global-nav-bar div:has(form) > button.main-globalNav-link-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Search bar: a soft pill of milky glass, after the same reference as the
+ * controls (a soft, wobbling blob of milky glass with gentle folds).
+ *  - idle: a faint milky body that blurs and brightens what's behind it, a
+ *    gentle inner glow, and a soft thin-film shimmer along its edge
+ *  - hover / focus: it comes alive like the reference blob. The edge goes
+ *    soft, the outline slowly wobbles and the glass breathes, and soft milky
+ *    folds drift across it. Focus also brings a gentle glow of the song's
+ *    colors around the edge (like a voice assistant listening), kept at half
+ *    strength so the shape leads, not the color.
+ * The glass body is drawn on a layer under the text (not the input itself),
+ * so its edges can be blurred soft without blurring the text. */
+@property --mt-glow-angle {
+  syntax: "<angle>";
+  inherits: true;
+  initial-value: 0deg;
+}
+
+#global-nav-bar form:has(input) {
+  isolation: isolate;
+  border-radius: 24px;
+  animation:
+    glass-spin 50s linear infinite,
+    mt-glow-spin 9s linear infinite;
+}
+
+#global-nav-bar form:has(input):is(:hover, :focus-within) {
+  animation:
+    glass-spin 50s linear infinite,
+    mt-glow-spin 9s linear infinite,
+    mt-pill-morph 7s ease-in-out infinite;
+}
+
+/* Listening: the outline billows like a cloud */
+#global-nav-bar form:has(input):focus-within {
+  animation:
+    glass-spin 50s linear infinite,
+    mt-glow-spin 9s linear infinite,
+    mt-cloud-morph 8s ease-in-out infinite;
+}
+
+/* The text field itself is clear; the glass is the layer below */
+#global-nav-bar form:has(input) input {
+  border: 0 !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#global-nav-bar form:has(input) > div:has(> input) {
+  border-radius: inherit;
+}
+
+/* The glass body */
+#global-nav-bar form:has(input) > div:has(> input)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background:
+    /* soft milky folds, drifting while awake (like the reference's swirls) */
+    linear-gradient(112deg,
+      transparent 18%,
+      rgba(255, 255, 255, 0) 24%,
+      rgba(255, 255, 255, 0.11) 33%,
+      rgba(255, 255, 255, 0) 44%,
+      transparent 54%,
+      rgba(255, 255, 255, 0.07) 66%,
+      rgba(255, 255, 255, 0) 78%) 0% 0% / 260% 100% no-repeat,
+    radial-gradient(90% 160% at 25% 0%, color-mix(in srgb, var(--mt-art-light) 13%, transparent), transparent 65%),
+    radial-gradient(60% 120% at 80% 110%, color-mix(in srgb, var(--mt-art) 9%, transparent), transparent 70%),
+    rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(14px) brightness(1.18) saturate(1.2);
+  box-shadow:
+    inset 0 0 16px color-mix(in srgb, var(--mt-art-light) 9%, transparent),
+    inset 0 6px 14px -10px rgba(255, 255, 255, 0.16);
+  filter: blur(0.5px);
+  transition: background-color 0.9s ease, box-shadow 0.9s ease, filter 0.9s ease, backdrop-filter 0.9s ease;
+}
+
+/* Awake: the edge goes soft, the glass milkier, the folds drift and the
+ * whole body breathes slowly */
+#global-nav-bar form:has(input):is(:hover, :focus-within) > div:has(> input)::before {
+  background-color: rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(20px) brightness(1.3) saturate(1.2);
+  box-shadow:
+    inset 0 0 22px color-mix(in srgb, var(--mt-art-light) 16%, transparent),
+    inset 0 8px 16px -10px rgba(255, 255, 255, 0.26),
+    inset 0 -8px 16px -12px rgba(255, 255, 255, 0.12),
+    0 0 14px rgba(255, 255, 255, 0.05);
+  filter: blur(1.8px);
+  animation:
+    mt-fold-drift 9s ease-in-out infinite,
+    mt-pill-breathe 5.5s ease-in-out infinite;
+}
+
+/* Listening: a cloud of milky glass. The edge melts away, a soft milky
+ * haze surrounds it, and it breathes deeper */
+#global-nav-bar form:has(input):focus-within > div:has(> input)::before {
+  background-color: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(24px) brightness(1.38) saturate(1.2);
+  box-shadow:
+    inset 0 0 26px color-mix(in srgb, var(--mt-art-light) 18%, transparent),
+    inset 0 9px 18px -10px rgba(255, 255, 255, 0.3),
+    inset 0 -9px 18px -12px rgba(255, 255, 255, 0.14),
+    0 0 24px rgba(255, 255, 255, 0.02);
+  filter: blur(3.5px);
+  animation:
+    mt-fold-drift 9s ease-in-out infinite,
+    mt-cloud-breathe 6s ease-in-out infinite;
+}
+
+/* Soft milky puffs billowing just past the edge, so the outline reads as
+ * a cloud rather than a crisp pill. Only while listening. */
+#global-nav-bar form:has(input) > div:has(> input)::after {
+  content: "";
+  position: absolute;
+  inset: -7px -5px;
+  z-index: -1;
+  border-radius: inherit;
+  background:
+    radial-gradient(16% 42% at 10% 12%, rgba(255, 255, 255, 0.16), transparent 72%),
+    radial-gradient(13% 38% at 31% 92%, rgba(255, 255, 255, 0.13), transparent 72%),
+    radial-gradient(18% 44% at 52% 6%, rgba(255, 255, 255, 0.15), transparent 72%),
+    radial-gradient(14% 40% at 73% 94%, rgba(255, 255, 255, 0.13), transparent 72%),
+    radial-gradient(15% 42% at 90% 10%, rgba(255, 255, 255, 0.14), transparent 72%),
+    radial-gradient(9% 46% at 2% 60%, rgba(255, 255, 255, 0.12), transparent 72%),
+    radial-gradient(9% 46% at 98% 55%, rgba(255, 255, 255, 0.12), transparent 72%);
+  background-repeat: no-repeat;
+  filter: blur(7px);
+  mix-blend-mode: screen;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.1s ease;
+}
+
+#global-nav-bar form:has(input):focus-within > div:has(> input)::after {
+  opacity: 0.3;
+  animation: mt-cloud-drift 10s ease-in-out infinite;
+}
+
+#global-nav-bar form:has(input) input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+  transition: color 0.9s ease;
+}
+
+#global-nav-bar form:has(input):is(:hover, :focus-within) input::placeholder {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* The edge light: a thin, slow shimmer at rest; softer and a little fuller
+ * while awake */
+#global-nav-bar form:has(input)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--glass-angle),
+    var(--mt-art-light),
+    var(--mt-p1),
+    rgba(255, 255, 255, 0.9),
+    var(--mt-p3),
+    var(--mt-art),
+    var(--mt-p2),
+    var(--mt-art-light));
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  mix-blend-mode: screen;
+  filter: blur(2.5px);
+  opacity: 0.22;
+  pointer-events: none;
+  transition: opacity 0.9s ease, padding 0.9s ease, filter 0.9s ease;
+}
+
+#global-nav-bar form:has(input):hover::after {
+  padding: 3px;
+  filter: blur(4px);
+  opacity: 0.18;
+}
+
+/* Listening: the edge light turns pastel and melts into a soft inner glow */
+#global-nav-bar form:has(input):focus-within::after {
+  padding: 7px;
+  background: conic-gradient(from var(--glass-angle),
+    color-mix(in srgb, var(--mt-art-light) 55%, #ffffff),
+    color-mix(in srgb, var(--mt-p1) 55%, #ffffff),
+    #ffffff,
+    color-mix(in srgb, var(--mt-p3) 55%, #ffffff),
+    color-mix(in srgb, var(--mt-art) 55%, #ffffff),
+    color-mix(in srgb, var(--mt-p2) 55%, #ffffff),
+    color-mix(in srgb, var(--mt-art-light) 55%, #ffffff));
+  filter: blur(9px);
+  opacity: 0.12;
+}
+
+/* The aura: the song's colors flowing around the pill, blurred into a soft
+ * glow that breathes. Hidden at rest, a whisper on hover, half strength
+ * while listening. */
+#global-nav-bar form:has(input)::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  z-index: -2;
+  border-radius: inherit;
+  background: conic-gradient(from var(--mt-glow-angle),
+    color-mix(in srgb, var(--mt-p1) 60%, #ffffff),
+    color-mix(in srgb, var(--mt-art-light) 60%, #ffffff),
+    color-mix(in srgb, var(--mt-p3) 60%, #ffffff),
+    color-mix(in srgb, var(--mt-p2) 60%, #ffffff),
+    color-mix(in srgb, var(--mt-p4) 60%, #ffffff),
+    color-mix(in srgb, var(--mt-art) 60%, #ffffff),
+    color-mix(in srgb, var(--mt-p5) 60%, #ffffff),
+    color-mix(in srgb, var(--mt-p1) 60%, #ffffff));
+  filter: blur(18px);
+  -webkit-mask: radial-gradient(farthest-side, transparent 55%, #000 90%);
+  mask: radial-gradient(farthest-side, transparent 55%, #000 90%);
+  opacity: 0;
+  pointer-events: none;
+  animation: mt-glow-breathe 3.6s ease-in-out infinite;
+  transition: opacity 0.9s ease, inset 0.9s ease;
+}
+
+#global-nav-bar form:has(input):hover::before {
+  opacity: 0.1;
+}
+
+#global-nav-bar form:has(input):focus-within::before {
+  inset: -6px;
+  opacity: 0.1;
+}
+
+/* The outline slowly wobbles, like the reference blob (24px is a round
+ * pill end; the uneven corners make it soft and organic) */
+@keyframes mt-pill-morph {
+  0%, 100% { border-radius: 24px 24px 24px 24px / 24px 24px 24px 24px; }
+  25%      { border-radius: 30px 22px 26px 28px / 22px 28px 24px 26px; }
+  50%      { border-radius: 22px 30px 28px 24px / 28px 22px 26px 24px; }
+  75%      { border-radius: 28px 26px 22px 30px / 24px 26px 28px 22px; }
+}
+
+/* While listening the outline billows more, like a cloud */
+@keyframes mt-cloud-morph {
+  0%, 100% { border-radius: 24px 26px 24px 26px / 24px 24px 26px 24px; }
+  20%      { border-radius: 34px 18px 28px 32px / 18px 32px 22px 30px; }
+  40%      { border-radius: 18px 34px 32px 22px / 32px 18px 30px 22px; }
+  60%      { border-radius: 30px 24px 18px 34px / 22px 28px 32px 18px; }
+  80%      { border-radius: 22px 32px 30px 20px / 30px 20px 18px 32px; }
+}
+
+/* ...breathes deeper... */
+@keyframes mt-cloud-breathe {
+  0%, 100% { scale: 1 1; }
+  35%      { scale: 1.014 1.12; }
+  65%      { scale: 1.006 1.05; }
+}
+
+/* ...and its puffs drift slowly */
+@keyframes mt-cloud-drift {
+  0%, 100% { translate: 0 0; scale: 1 1; }
+  30%      { translate: 6px -1px; scale: 1.01 1.08; }
+  60%      { translate: -5px 1px; scale: 1.005 0.96; }
+}
+
+/* The glass swells and settles gently */
+@keyframes mt-pill-breathe {
+  0%, 100% { scale: 1 1; }
+  50%      { scale: 1.008 1.07; }
+}
+
+/* The milky folds drift slowly across the glass and back */
+@keyframes mt-fold-drift {
+  0%, 100% { background-position: 0% 0%, 0 0, 0 0, 0 0; }
+  50%      { background-position: 100% 0%, 0 0, 0 0, 0 0; }
+}
+
+@keyframes mt-glow-spin {
+  to { --mt-glow-angle: 360deg; }
+}
+
+@keyframes mt-glow-breathe {
+  0%, 100% { scale: 1 0.96; }
+  50%      { scale: 1.015 1.08; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #global-nav-bar form:has(input),
+  #global-nav-bar form:has(input):is(:hover, :focus-within),
+  #global-nav-bar form:has(input)::before,
+  #global-nav-bar form:has(input) > div:has(> input)::before,
+  #global-nav-bar form:has(input) > div:has(> input)::after {
+    animation: none !important;
+  }
+}
+
+/* Each bubble floats on its own rhythm.
+ * Shuffle and repeat are matched by position because Spotify drops their
+ * data-testid in some states (e.g. "Disable Shuffle"). */
+.player-controls__left > button:first-child                                 { animation-delay: -2s, -3s, -6s; }
+.player-controls__buttons button[data-testid="control-button-skip-back"]    { animation-delay: -5s, -8s, -14s; }
+.player-controls__buttons button[data-testid="control-button-playpause"]    { animation-delay: 0s, 0s, 0s; }
+.player-controls__buttons button[data-testid="control-button-skip-forward"] { animation-delay: -3.5s, -11s, -22s; }
+.player-controls__right > button:last-child                                 { animation-delay: -7s, -5s, -30s; }
+
+/* Hover: the bubble swells gently and its light comes up a little.
+ * theme.js also eases the color flow a bit faster. */
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+):hover:not(:is(:disabled, [aria-disabled="true"])) {
+  scale: 1.07;
+}
+
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+):hover:not(:is(:disabled, [aria-disabled="true"])) > *::before {
+  filter: blur(3px) brightness(1.15);
+}
+
+/* Pressed: a soft swell of light from the colors, then it settles again.
+ * theme.js holds .glass-pressed briefly after the click so it can fade out. */
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+):active:not(:is(:disabled, [aria-disabled="true"])) {
+  scale: 0.95;
+  transition-duration: 0.15s, 0.6s, 0.4s, 0.9s, 0.6s;
+}
+
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+):is(:active, .glass-pressed):not(:is(:disabled, [aria-disabled="true"])) {
+  color: #ffffff !important;
+  box-shadow:
+    inset 0 0 6px color-mix(in srgb, var(--mt-art-light) 65%, transparent),
+    inset 0 0 16px color-mix(in srgb, var(--mt-art) 45%, transparent),
+    0 0 20px color-mix(in srgb, var(--mt-art) 30%, transparent);
+}
+
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+):is(:active, .glass-pressed):not(:is(:disabled, [aria-disabled="true"])) > *::before {
+  filter: blur(3px) brightness(1.3);
+  transition-duration: 0.2s;
+}
+
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+):is(:active, .glass-pressed):not(:is(:disabled, [aria-disabled="true"]))::before {
+  opacity: 0.9;
+  transition-duration: 0.2s;
+}
+
+/* The play button keeps its softness when hovered and pressed */
+.player-controls__buttons button[data-testid="control-button-playpause"]:hover:not(:is(:disabled, [aria-disabled="true"])) > *::before {
+  filter: blur(5px) brightness(1.12);
+}
+
+.player-controls__buttons button[data-testid="control-button-playpause"]:is(:active, .glass-pressed):not(:is(:disabled, [aria-disabled="true"])) {
+  box-shadow:
+    inset 0 0 14px color-mix(in srgb, var(--mt-art-light) 40%, transparent),
+    inset 0 0 30px color-mix(in srgb, var(--mt-art) 26%, transparent),
+    inset 0 -12px 24px -10px color-mix(in srgb, var(--mt-art-light) 30%, transparent),
+    0 0 34px color-mix(in srgb, var(--mt-art) 18%, transparent);
+}
+
+.player-controls__buttons button[data-testid="control-button-playpause"]:is(:active, .glass-pressed):not(:is(:disabled, [aria-disabled="true"])) > *::before {
+  filter: blur(5px) brightness(1.22);
+}
+
+/* Shuffle / repeat switched on: the shell glows fuller and the icon takes
+ * the song's light color */
+:is(.player-controls__left > button:first-child, .player-controls__right > button:last-child):is(
+  [aria-checked="true"],
+  [aria-checked="mixed"],
+  .encore-internal-color-text-bright-accent
+) {
+  color: var(--mt-art-light) !important;
+  box-shadow:
+    inset 0 0 5px color-mix(in srgb, var(--mt-art-light) 60%, transparent),
+    inset 0 0 14px color-mix(in srgb, var(--mt-art) 42%, transparent),
+    inset 0 -6px 12px -4px color-mix(in srgb, var(--mt-art-light) 35%, transparent),
+    0 0 20px color-mix(in srgb, var(--mt-art) 22%, transparent);
+}
+
+:is(.player-controls__left > button:first-child, .player-controls__right > button:last-child):is(
+  [aria-checked="true"],
+  [aria-checked="mixed"],
+  .encore-internal-color-text-bright-accent
+)::before {
+  opacity: 0.6;
+}
+
+:is(.player-controls__left > button:first-child, .player-controls__right > button:last-child):is(
+  [aria-checked="true"],
+  [aria-checked="mixed"],
+  .encore-internal-color-text-bright-accent
+) svg {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--mt-art-light) 70%, transparent));
+}
+
+/* Shuffle / repeat switched off: a quieter blob */
+:is(.player-controls__left > button:first-child, .player-controls__right > button:last-child):not(
+  [aria-checked="true"],
+  [aria-checked="mixed"],
+  .encore-internal-color-text-bright-accent
+) {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+:is(.player-controls__left > button:first-child, .player-controls__right > button:last-child):not(
+  [aria-checked="true"],
+  [aria-checked="mixed"],
+  .encore-internal-color-text-bright-accent
+)::before {
+  opacity: 0.22;
+}
+
+/* Unavailable (e.g. Spotify locks shuffle/repeat during autoplay): dimmed
+ * gently so it still belongs with the others. Spotify's own fade is overridden. */
+:is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+):is(:disabled, [aria-disabled="true"]) {
+  opacity: 0.55 !important;
+  cursor: default;
+}
+
+@keyframes glass-float {
+  0%, 100% { translate: 0 0; }
+  25%      { translate: 0.5px -2px; }
+  50%      { translate: 0 -0.8px; }
+  75%      { translate: -0.5px -2.4px; }
+}
+
+@keyframes glass-morph {
+  0%, 100% { border-radius: 48% 52% 55% 45% / 50% 45% 55% 50%; }
+  20%      { border-radius: 54% 46% 48% 52% / 47% 53% 48% 52%; }
+  40%      { border-radius: 47% 53% 52% 48% / 54% 47% 53% 46%; }
+  60%      { border-radius: 52% 48% 46% 54% / 48% 54% 46% 52%; }
+  80%      { border-radius: 46% 54% 53% 47% / 52% 48% 52% 48%; }
+}
+
+@keyframes glass-spin {
+  to { --glass-angle: 360deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(
+  .player-controls__buttons :is(
+    [data-testid="control-button-playpause"],
+    .player-controls__left > button,
+    .player-controls__right > button
+  ),
+  :where(#global-nav-bar div:has(form) > button.main-globalNav-link-icon) /* Home */
+) {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Pyaar Settings: a row in the account menu (with the theme's glass   */
+/* heart) that opens the settings window. Added by theme.js, settings. */
+/* ------------------------------------------------------------------ */
+.mt-menu-row {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The like button's glass heart, filled with the song's colors (theme.js
+ * puts a .mt-gh in it; its 24 px heart is scaled to fit) */
+.mt-menu-heart {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.mt-menu-heart .mt-gh {
+  scale: 0.667;
+}
+
+/* The settings window: soft frosted glass lit by the song's colors,
+ * opening with a gentle swell. No hard borders: a faint light rim only. */
+.mt-settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.mt-settings-backdrop.mt-open {
+  opacity: 1;
+}
+
+.mt-settings {
+  position: relative;
+  width: min(440px, calc(100vw - 48px));
+  padding: 22px 22px 14px;
+  border-radius: 24px;
+  color: #fff;
+  font-family: var(--mt-font-text);
+  background:
+    radial-gradient(120% 70% at 20% 0%, color-mix(in srgb, var(--mt-art) 22%, transparent), transparent 70%),
+    radial-gradient(90% 60% at 100% 100%, color-mix(in srgb, var(--mt-p2) 14%, transparent), transparent 70%),
+    rgba(20, 20, 24, 0.72);
+  backdrop-filter: blur(30px) saturate(1.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 0 30px color-mix(in srgb, var(--mt-art-light) 8%, transparent),
+    0 24px 70px rgba(0, 0, 0, 0.55),
+    0 0 50px color-mix(in srgb, var(--mt-art) 12%, transparent);
+  scale: 0.94;
+  translate: 0 10px;
+  transition: scale 0.5s var(--glass-spring), translate 0.5s var(--glass-spring);
+}
+
+.mt-open .mt-settings {
+  scale: 1;
+  translate: 0 0;
+}
+
+/* A faint light rim in the song's colors */
+.mt-settings::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(150deg,
+    color-mix(in srgb, var(--mt-art-light) 45%, transparent),
+    transparent 40%,
+    transparent 65%,
+    color-mix(in srgb, var(--mt-p1) 30%, transparent));
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+
+.mt-settings-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.mt-settings-heart {
+  width: 24px;
+  height: 24px;
+}
+
+.mt-settings-heart .mt-gh {
+  scale: 1;
+}
+
+.mt-settings-title {
+  flex: 1;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Close: a small soft glass pearl with an × */
+.mt-settings-close {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+  transition: background 0.3s ease, scale 0.4s var(--glass-spring);
+}
+
+.mt-settings-close::before,
+.mt-settings-close::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 1.6px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.75);
+  translate: -50% -50%;
+  rotate: 45deg;
+}
+
+.mt-settings-close::after {
+  rotate: -45deg;
+}
+
+.mt-settings-close:hover {
+  background: rgba(255, 255, 255, 0.13);
+  scale: 1.08;
+}
+
+.mt-set-group {
+  margin-top: 14px;
+}
+
+.mt-set-group-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--mt-art-light) 60%, rgba(255, 255, 255, 0.5));
+}
+
+.mt-set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 14px;
+  margin-inline: -14px;
+  border-radius: 14px;
+  transition: background 0.3s ease, opacity 0.4s ease;
+}
+
+.mt-set-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mt-set-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.mt-set-hint {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Intensity dims while music sync is off */
+.mt-set-row.mt-set-off {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Switch: a glass pill; on, it fills with the song's color and the milky
+ * knob slides across */
+.mt-switch {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 26px;
+  border: 0;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transition: background 0.4s ease, box-shadow 0.4s ease;
+}
+
+.mt-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #ffffff, rgba(255, 255, 255, 0.82) 60%, rgba(235, 235, 245, 0.7));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transition: translate 0.45s var(--glass-spring);
+}
+
+.mt-switch[aria-checked="true"] {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--mt-art-light) 70%, var(--mt-art)),
+    var(--mt-art));
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.2),
+    0 0 14px color-mix(in srgb, var(--mt-art) 35%, transparent);
+}
+
+.mt-switch[aria-checked="true"]::after {
+  translate: 20px 0;
+}
+
+/* Intensity: three options on a glass track, with a milky thumb sliding
+ * under the chosen one */
+.mt-seg {
+  --i: 1;
+  position: relative;
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 210px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.mt-seg-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 3);
+  border-radius: 9px;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--mt-art-light) 55%, transparent),
+      color-mix(in srgb, var(--mt-art) 45%, transparent));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+  translate: calc(var(--i) * 100%) 0;
+  transition: translate 0.45s var(--glass-spring);
+}
+
+.mt-seg-option {
+  position: relative;
+  z-index: 1;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.mt-seg-option[aria-checked="true"] {
+  color: #fff;
+}

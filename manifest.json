@@ -1,0 +1,17 @@
+[
+  {
+    "name": "Pyaar",
+    "description": "Glass and light, colored by every song. A soft, moving theme with liquid-glass controls, a glass heart and optional music sync.",
+    "preview": "images/preview.png",
+    "readme": "README.md",
+    "usercss": "Pyaar/user.css",
+    "schemes": "Pyaar/color.ini",
+    "include": [
+      "https://cdn.jsdelivr.net/gh/IndianStalker/pyaar@main/Pyaar/theme.js"
+    ],
+    "authors": [
+      { "name": "IndianStalker", "url": "https://github.com/IndianStalker" }
+    ],
+    "tags": ["dark", "glass", "animated", "music-sync"]
+  }
+]

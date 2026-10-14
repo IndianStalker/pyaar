@@ -1,0 +1,6 @@
+# Only the theme, its manifest, README, LICENSE and images are published
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db
+desktop.ini

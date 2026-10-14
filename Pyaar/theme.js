@@ -1,0 +1,2066 @@
+// Pyaar: smoothly speeds up the glass blob swirl while a control is hovered.
+// The animations themselves live in user.css; this only eases their playback rate,
+// so the motion never jumps when the pointer enters or leaves.
+(function glassControls() {
+  // Matched by position because Spotify drops some data-testids (e.g. on "Disable Shuffle").
+  const SELECTOR = [
+    '.player-controls__buttons [data-testid="control-button-playpause"]',
+    ".player-controls__left > button",
+    ".player-controls__right > button",
+    "#global-nav-bar div:has(form) > button.main-globalNav-link-icon", // Home
+  ].join(",");
+
+  const HOVER_RATE = 1.6;
+  const EASE_MS = 700;
+  const rafs = new WeakMap();
+
+  function rampRate(button, target) {
+    const anims = button
+      .getAnimations({ subtree: true })
+      .filter((a) => typeof CSSAnimation === "undefined" || a instanceof CSSAnimation);
+    if (!anims.length) return;
+
+    const from = anims.map((a) => a.playbackRate);
+    const start = performance.now();
+    cancelAnimationFrame(rafs.get(button));
+
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / EASE_MS);
+      const k = 1 - Math.pow(1 - t, 3);
+      anims.forEach((a, i) => {
+        a.playbackRate = from[i] + (target - from[i]) * k;
+      });
+      if (t < 1) rafs.set(button, requestAnimationFrame(step));
+    };
+    rafs.set(button, requestAnimationFrame(step));
+  }
+
+  document.addEventListener("pointerover", (e) => {
+    const button = e.target.closest?.(SELECTOR);
+    if (!button || button.contains(e.relatedTarget)) return;
+    rampRate(button, HOVER_RATE);
+  });
+
+  document.addEventListener("pointerout", (e) => {
+    const button = e.target.closest?.(SELECTOR);
+    if (!button || button.contains(e.relatedTarget)) return;
+    rampRate(button, 1);
+  });
+
+  // Neon press flash: keep .glass-pressed on a little after release so the
+  // glow is visible even on a quick click, then let CSS fade it out.
+  const HOLD_MS = 280;
+  const timers = new WeakMap();
+
+  function press(button) {
+    clearTimeout(timers.get(button));
+    button.classList.add("glass-pressed");
+  }
+
+  function release(button) {
+    clearTimeout(timers.get(button));
+    timers.set(button, setTimeout(() => button.classList.remove("glass-pressed"), HOLD_MS));
+  }
+
+  document.addEventListener("pointerdown", (e) => {
+    const button = e.target.closest?.(SELECTOR);
+    if (button) press(button);
+  });
+
+  document.addEventListener("pointerup", (e) => {
+    const button = e.target.closest?.(SELECTOR);
+    if (button) release(button);
+  });
+
+  document.addEventListener("pointercancel", (e) => {
+    const button = e.target.closest?.(SELECTOR);
+    if (button) release(button);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== " " && e.key !== "Enter") return;
+    const button = document.activeElement?.closest?.(SELECTOR);
+    if (button) press(button);
+  });
+
+  document.addEventListener("keyup", (e) => {
+    const button = document.activeElement?.closest?.(SELECTOR);
+    if (button) release(button);
+  });
+})();
+
+// Pyaar: the glass player bar's light takes the current song's colors.
+// Exposes the cover as --mt-cover, its main colors as --mt-art-*, its
+// distinct colors as --mt-p1..--mt-p5, and an 8-stop rainbow of the whole
+// artwork's colors in proportion as --mt-r1..--mt-r12 (used by the center light).
+(function glassLight() {
+  function coverUrl() {
+    const meta = window.Spicetify?.Player?.data?.item?.metadata;
+    const uri = meta?.image_xlarge_url || meta?.image_large_url || meta?.image_url;
+    if (uri?.startsWith("spotify:image:")) {
+      return "https://i.scdn.co/image/" + uri.slice("spotify:image:".length);
+    }
+    if (uri?.startsWith("http")) return uri;
+    return document.querySelector(".main-nowPlayingBar-container img")?.src || null;
+  }
+
+  function rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return [0, 0, l];
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h;
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    return [h * 60, s, l];
+  }
+
+  const hsl = (h, s, l) => `hsl(${h.toFixed(0)} ${(s * 100).toFixed(0)}% ${(l * 100).toFixed(0)}%)`;
+
+  // Reads the cover's real colors. Pixels are grouped into a few color
+  // clusters (k-means); each cluster keeps its true hue and saturation, so
+  // nothing is invented. Colors are only lifted in lightness where needed to
+  // show on a dark background.
+  async function artColors(url) {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = url;
+    await img.decode();
+    const size = 48;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, size, size);
+    const data = ctx.getImageData(0, 0, size, size).data;
+    const px = [];
+    for (let i = 0; i < data.length; i += 4) px.push([data[i], data[i + 1], data[i + 2]]);
+
+    const clusters = kmeans(px, 6);
+    const total = px.length;
+    const info = clusters
+      .filter((c) => c.count > total * 0.015)
+      .map((c) => {
+        const [h, s, l] = rgbToHsl(...c.rgb);
+        return { h, s, l, share: c.count / total };
+      });
+
+    // The main color: the most present one, favoring a little color over grey
+    const main = info.slice().sort((x, y) => y.share * (0.5 + y.s) - x.share * (0.5 + x.s))[0];
+    const darkest = info.slice().sort((x, y) => x.l - y.l)[0];
+
+    const lift = (l, lo, hi) => Math.min(hi, Math.max(lo, l));
+    return {
+      rainbow: artRainbow(px),
+      main: hsl(main.h, main.s, lift(main.l, 0.42, 0.68)),
+      light: hsl(main.h, main.s, lift(main.l + 0.2, 0.72, 0.86)),
+      dark: hsl(darkest.h, darkest.s, Math.min(darkest.l, 0.12)),
+      // The cover's colors by how much of it they cover
+      palette: [0, 1, 2, 3, 4].map((i) => {
+        const c = info.slice().sort((x, y) => y.share - x.share)[i % info.length];
+        return hsl(c.h, c.s, lift(c.l, 0.32, 0.82));
+      }),
+    };
+  }
+
+  // The artwork's colors in proportion, as 12 stops for the center light.
+  // Colors come from clustering the whole image and keep their real hue,
+  // saturation and (nearly) lightness. Each color gets stops in proportion to
+  // how much of the artwork it covers, so the main color dominates and small
+  // accents stay small (or drop out). Similar colors sit side by side.
+  function artRainbow(px) {
+    const total = px.length;
+    // Merge clusters that are really the same color (k-means splits big areas)
+    const clusters = kmeans(px, 8).filter((c) => c.count > 0);
+    const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    for (let merged = true; merged; ) {
+      merged = false;
+      for (let i = 0; i < clusters.length && !merged; i++) {
+        for (let j = i + 1; j < clusters.length && !merged; j++) {
+          if (dist(clusters[i].rgb, clusters[j].rgb) < 64) {
+            const a = clusters[i], b = clusters[j], n = a.count + b.count;
+            a.rgb = a.rgb.map((v, k) => (v * a.count + b.rgb[k] * b.count) / n);
+            a.count = n;
+            clusters.splice(j, 1);
+            merged = true;
+          }
+        }
+      }
+    }
+    const found = clusters
+      .filter((c) => c.count > total * 0.03)
+      .map((c) => {
+        const [h, s, l] = rgbToHsl(...c.rgb);
+        // Only lift very dark colors enough to show on black
+        return { h, s, l: Math.min(0.72, Math.max(0.36, l)), share: c.count / total };
+      });
+    if (!found.length) return Array(12).fill(hsl(0, 0, 0.5));
+
+    // Order: colorful ones around the wheel, greys placed by lightness
+    const colorful = found.filter((c) => c.s >= 0.12).sort((x, y) => x.h - y.h);
+    const greys = found.filter((c) => c.s < 0.12).sort((x, y) => x.l - y.l);
+    const order = colorful.slice();
+    greys.forEach((g, i) => order.splice(Math.round(((i + 1) * order.length) / (greys.length + 1)) + i, 0, g));
+
+    // 12 stops shared out strictly by area: walk the colors in order and give
+    // each stop to whichever color covers that point of the artwork
+    const N = 12;
+    const sum = order.reduce((n, c) => n + c.share, 0);
+    const stops = [];
+    let prev = null, run = 0;
+    for (let i = 0; i < N; i++) {
+      const at = ((i + 0.5) / N) * sum;
+      let acc = 0, pick = order[order.length - 1];
+      for (const c of order) {
+        acc += c.share;
+        if (at <= acc) { pick = c; break; }
+      }
+      run = pick === prev ? run + 1 : 0;
+      prev = pick;
+      // a gentle shimmer between a color's own neighboring stops
+      stops.push(hsl(pick.h, pick.s, Math.min(0.75, Math.max(0.34, pick.l + (run % 2 ? 0.04 : -0.02)))));
+    }
+    return stops;
+  }
+
+  // Groups pixels into k color clusters; returns their average color and size.
+  function kmeans(px, k) {
+    const dist = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+    // Deterministic spread-out starting points
+    const centers = [px[0].slice()];
+    while (centers.length < k) {
+      let best = null, bestD = -1;
+      for (const p of px) {
+        const d = Math.min(...centers.map((c) => dist(p, c)));
+        if (d > bestD) { bestD = d; best = p; }
+      }
+      centers.push(best.slice());
+    }
+    let assign = new Array(px.length).fill(0);
+    for (let iter = 0; iter < 10; iter++) {
+      assign = px.map((p) => {
+        let bi = 0, bd = Infinity;
+        centers.forEach((c, i) => { const d = dist(p, c); if (d < bd) { bd = d; bi = i; } });
+        return bi;
+      });
+      const sums = centers.map(() => [0, 0, 0, 0]);
+      px.forEach((p, i) => { const s = sums[assign[i]]; s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; s[3]++; });
+      sums.forEach((s, i) => { if (s[3]) centers[i] = [s[0] / s[3], s[1] / s[3], s[2] / s[3]]; });
+    }
+    const counts = centers.map(() => 0);
+    assign.forEach((a) => counts[a]++);
+    return centers.map((c, i) => ({ rgb: c, count: counts[i] }));
+  }
+
+  let current = null;
+
+  async function apply(url) {
+    if (current !== url) apply.retries = 0;
+    current = url;
+    const root = document.documentElement;
+    root.style.setProperty("--mt-cover", `url("${url}")`);
+    try {
+      const c = await artColors(url);
+      if (current !== url) return;
+      root.style.setProperty("--mt-art", c.main);
+      root.style.setProperty("--mt-art-light", c.light);
+      root.style.setProperty("--mt-art-dark", c.dark);
+      c.palette.forEach((color, i) => root.style.setProperty(`--mt-p${i + 1}`, color));
+      c.rainbow.forEach((color, i) => root.style.setProperty(`--mt-r${i + 1}`, color));
+    } catch {
+      // The image wasn't ready (common right after startup): try again shortly
+      if (current === url && (apply.retries = (apply.retries || 0) + 1) <= 5) {
+        setTimeout(() => current === url && apply(url), 1500);
+      }
+    }
+  }
+
+  // Spotify fires "songchange" before the new cover is in the player data,
+  // so keep checking for a little while until the cover actually changes.
+  function check(attempt = 0) {
+    const url = coverUrl();
+    if (url && url !== current) {
+      apply(url);
+    } else if (attempt < 25) {
+      setTimeout(() => check(attempt + 1), 250);
+    }
+  }
+
+  (function waitForPlayer() {
+    if (!document.body || !window.Spicetify?.Player?.addEventListener) {
+      setTimeout(waitForPlayer, 300);
+      return;
+    }
+    Spicetify.Player.addEventListener("songchange", () => check());
+    // Safety net for changes that don't fire an event (e.g. ads, queue edits)
+    setInterval(() => {
+      const url = coverUrl();
+      if (url && url !== current) apply(url);
+    }, 3000);
+    check();
+  })();
+})();
+
+// Pyaar: moves the progress bar every frame from the player's own clock,
+// so it glides in exact sync instead of stepping once a second. Exposes the
+// position as --mt-pos on the bar (used by user.css). While the bar is being
+// dragged, and briefly after, it follows Spotify's own value instead.
+// Also marks <html data-mt-paused> while playback is paused.
+(function smoothProgress() {
+  const BAR = '[data-testid="playback-progressbar"] .progress-bar';
+  let followSpotifyUntil = 0;
+  let dragging = false;
+
+  document.addEventListener("pointerdown", (e) => {
+    if (e.target.closest?.('[data-testid="playback-progressbar"]')) dragging = true;
+  });
+  const release = () => {
+    if (dragging) followSpotifyUntil = performance.now() + 700;
+    dragging = false;
+  };
+  document.addEventListener("pointerup", release);
+  document.addEventListener("pointercancel", release);
+
+  let last = "";
+  let wasPaused = null;
+  function frame(now) {
+    const bar = document.querySelector(BAR);
+    const player = window.Spicetify?.Player;
+
+    // Lets user.css shift the timeline's colors when playback pauses
+    const paused = !!player?.data?.isPaused;
+    if (paused !== wasPaused) {
+      document.documentElement.toggleAttribute("data-mt-paused", paused);
+      wasPaused = paused;
+    }
+
+    if (bar && player) {
+      let pct;
+      if (dragging || now < followSpotifyUntil) {
+        pct = parseFloat(bar.style.getPropertyValue("--progress-bar-transform"));
+      } else {
+        const duration = player.getDuration?.();
+        const progress = player.getProgress?.();
+        if (duration > 0 && progress >= 0) pct = Math.min(100, (progress / duration) * 100);
+      }
+      if (Number.isFinite(pct)) {
+        const value = pct.toFixed(3) + "%";
+        if (value !== last || bar.style.getPropertyValue("--mt-pos") !== value) {
+          bar.style.setProperty("--mt-pos", value);
+          last = value;
+        }
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+
+// Pyaar: settings, and "Pyaar Settings" in the account menu.
+// Settings live in localStorage and are shared through window.PyaarSettings
+// (get / set / on). The menu is where the theme's visual controls will grow.
+(function settings() {
+  const KEY = "pyaar:settings";
+  // Music sync and the center light's tempo start off; they are turned on in
+  // Pyaar Settings
+  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false };
+  const state = { ...DEFAULTS };
+  try {
+    // (settings saved before the theme was named Pyaar carry over)
+    Object.assign(state, JSON.parse(localStorage.getItem(KEY) || localStorage.getItem("mytheme:settings") || "{}"));
+  } catch {}
+  const listeners = new Set();
+
+  const S = (window.PyaarSettings = {
+    get: (key) => state[key],
+    set(key, value) {
+      state[key] = value;
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+      listeners.forEach((fn) => fn(key, value));
+    },
+    on: (fn) => listeners.add(fn),
+  });
+
+  const LEVELS = [["subtle", "Subtle"], ["normal", "Normal"], ["strong", "Strong"]];
+
+  // The account menu gets one "Pyaar Settings" row (with the glass heart),
+  // added each time the menu opens and built from Spotify's own rows so it
+  // looks native, like Spicy Lyrics' row. Clicking it opens the settings
+  // window. (Spicetify's Menu API doesn't work on this Spotify version: its
+  // items never show, and its SubMenu breaks the whole account menu.)
+  function addMenuRow(list) {
+    if (list.querySelector("[data-mt-menu]")) return;
+    const sample = list.querySelector(':scope > li a[role="menuitem"][href^="/user/"]')?.closest("li");
+    const sampleItem = sample?.querySelector('[role="menuitem"]');
+    const sampleText = sample?.querySelector("span");
+    if (!sampleItem || !sampleText) return;
+
+    const li = document.createElement("li");
+    li.className = sample.className;
+    li.setAttribute("role", "presentation");
+    li.dataset.mtMenu = "";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = sampleItem.className;
+    button.setAttribute("role", "menuitem");
+    button.tabIndex = -1;
+    const row = (sampleItem.firstElementChild || sampleText).cloneNode(false);
+    row.classList.add("mt-menu-row");
+    const heart = document.createElement("span");
+    heart.className = "mt-menu-heart";
+    heart.append(window.PyaarGlassHeart?.(true) ?? "");
+    const name = sampleText.cloneNode(false);
+    name.textContent = "Pyaar Settings";
+    row.append(heart, name);
+    button.append(row);
+    li.append(button);
+    button.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Close the account menu (it closes on a press outside it; a
+      // synthetic Escape is ignored), then open the window
+      const o = { bubbles: true, cancelable: true, clientX: 0, clientY: 0, button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true };
+      for (const [Type, name] of [[PointerEvent, "pointerdown"], [MouseEvent, "mousedown"], [PointerEvent, "pointerup"], [MouseEvent, "mouseup"]]) {
+        document.body.dispatchEvent(new Type(name, o));
+      }
+      openSettings();
+    });
+    list.children[0].after(li);
+  }
+
+  // Watch the account button; when its menu opens, add the row. Spotify may
+  // re-create the button, so re-attach when it changes.
+  const observer = new MutationObserver((records) => {
+    if (records[0].target.getAttribute("aria-expanded") !== "true") return;
+    let tries = 0;
+    (function find() {
+      const list = document.querySelector('[role="menuitem"][href^="/user/"]')?.closest("ul");
+      if (list) addMenuRow(list);
+      else if (tries++ < 30) requestAnimationFrame(find);
+    })();
+  });
+  let watched = null;
+  setInterval(() => {
+    const button = document.querySelector('[data-testid="user-widget-link"]');
+    if (button && button !== watched) {
+      observer.disconnect();
+      observer.observe(button, { attributes: true, attributeFilter: ["aria-expanded"] });
+      watched = button;
+    }
+  }, 1000);
+
+  // The settings window: frosted glass in the song's colors (user.css,
+  // "Pyaar Settings window"). Grows into the full visual controls later.
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text) e.textContent = text;
+    return e;
+  }
+
+  // A switch; with `needs`, it dims while that other setting is off
+  function switchRow(label, hint, key, needs) {
+    const row = el("div", "mt-set-row");
+    const text = el("div", "mt-set-text");
+    text.append(el("div", "mt-set-label", label), el("div", "mt-set-hint", hint));
+    const sw = el("button", "mt-switch");
+    sw.type = "button";
+    sw.setAttribute("role", "switch");
+    sw.setAttribute("aria-label", label);
+    const sync = () => {
+      sw.setAttribute("aria-checked", String(!!S.get(key)));
+      if (needs) row.classList.toggle("mt-set-off", S.get(needs) === false);
+    };
+    sync();
+    sw.addEventListener("click", () => { S.set(key, !S.get(key)); sync(); });
+    if (needs) S.on((k) => k === needs && sync());
+    row.append(text, sw);
+    return row;
+  }
+
+  function levelRow() {
+    const row = el("div", "mt-set-row mt-set-level");
+    const text = el("div", "mt-set-text");
+    text.append(el("div", "mt-set-label", "Sync intensity"), el("div", "mt-set-hint", "How strongly the light moves with the music"));
+    const seg = el("div", "mt-seg");
+    seg.setAttribute("role", "radiogroup");
+    seg.setAttribute("aria-label", "Sync intensity");
+    seg.append(el("span", "mt-seg-thumb"));
+    const buttons = LEVELS.map(([value, label], i) => {
+      const b = el("button", "mt-seg-option", label);
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.addEventListener("click", () => { S.set("syncIntensity", value); sync(); });
+      seg.append(b);
+      return b;
+    });
+    const sync = () => {
+      const i = Math.max(0, LEVELS.findIndex(([v]) => v === S.get("syncIntensity")));
+      seg.style.setProperty("--i", i);
+      buttons.forEach((b, j) => b.setAttribute("aria-checked", String(i === j)));
+      row.classList.toggle("mt-set-off", !S.get("musicSync"));
+    };
+    sync();
+    S.on((key) => key === "musicSync" && sync());
+    row.append(text, seg);
+    return row;
+  }
+
+  let open = null;
+  function openSettings() {
+    if (open) return;
+    const backdrop = el("div", "mt-settings-backdrop");
+    const panel = el("div", "mt-settings");
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-label", "Pyaar Settings");
+
+    const head = el("div", "mt-settings-head");
+    const close = el("button", "mt-settings-close");
+    close.type = "button";
+    close.setAttribute("aria-label", "Close");
+    const heart = el("span", "mt-menu-heart mt-settings-heart");
+    heart.append(window.PyaarGlassHeart?.(true) ?? "");
+    head.append(heart, el("h2", "mt-settings-title", "Pyaar Settings"), close);
+
+    const music = el("section", "mt-set-group");
+    music.append(el("h3", "mt-set-group-title", "Music"),
+      switchRow("Music sync", "The library light follows the song's tempo and bass", "musicSync"),
+      levelRow());
+    const visuals = el("section", "mt-set-group");
+    visuals.append(el("h3", "mt-set-group-title", "Visuals"),
+      switchRow("Center light", "The moving light behind the center", "centerLight"),
+      switchRow("Follow the tempo", "The center light moves faster or slower with the song's BPM", "lightTempo", "centerLight"));
+
+    panel.append(head, music, visuals);
+    backdrop.append(panel);
+    document.body.append(backdrop);
+    requestAnimationFrame(() => backdrop.classList.add("mt-open"));
+
+    const onKey = (e) => e.key === "Escape" && dismiss();
+    function dismiss() {
+      backdrop.classList.remove("mt-open");
+      document.removeEventListener("keydown", onKey, true);
+      setTimeout(() => backdrop.remove(), 350);
+      open = null;
+    }
+    document.addEventListener("keydown", onKey, true);
+    close.addEventListener("click", dismiss);
+    backdrop.addEventListener("click", (e) => e.target === backdrop && dismiss());
+    open = backdrop;
+  }
+  S.open = openSettings;
+})();
+
+// Pyaar: music sync. The library ribbon moves with the song: it flows faster
+// with its tempo, surges and brightens on its bass hits, and opens up in its
+// loud parts. The center light only takes the tempo (sync.tempo), and only
+// when its own "Follow the tempo" setting is on.
+// Spotify doesn't let a theme hear the audio, so this reads the track's audio
+// analysis (beats, bars, sections, and short sound segments with loudness,
+// attack and timbre) and finds the bass hits in it: beats where a sound
+// attacks sharply and sounds dark, weighted toward the first beat of each
+// bar. The analysis is known ahead of time, so each hit starts rising just
+// before it lands instead of lagging behind it.
+// Layers, each with its own feel:
+//  - pulse: the bass hits (a punch that fades before the next beat)
+//  - shimmer: bright, sharp sounds (hi-hats, snares) as quick glints
+//  - breath: the loudness moment to moment, following each swell and fade
+//  - energy: how loud this part of the song is, slowly
+//  - build / bloom: the analysis knows each section's loudness ahead, so
+//    before a louder section the light speeds up and brightens, and when it
+//    lands it blooms wide and bright, then settles
+// Publishes window.PyaarSync, read by both shaders every frame (nothing is
+// written to CSS per frame, which would restyle the whole page). When off,
+// paused, or without analysis, everything settles back to the calm default.
+(function musicSync() {
+  const LEVELS = { subtle: 0.55, normal: 1, strong: 1.5 };
+  const sync = (window.PyaarSync = {
+    speed: 1,    // flow speed: from the tempo, plus a surge on each hit
+    tempo: 1,    // the center light's speed: the song's tempo alone (1 = calm), eased
+    pulse: 0,    // bass hit envelope (0..1.5 with intensity)
+    energy: 0.5, // how loud this part of the song is, 0..1
+    shimmer: 0,  // bright transients (hi-hats, snares), quick
+    breath: 0,   // each swell and fade against this part's loudness (around 0)
+    build: 0,    // rising before a louder section, 0..1
+    bloom: 0,    // a louder section just landed, fading over ~2 s
+    amount: 0,   // how much the energy shapes the light (0 when inactive)
+  });
+  const settings = window.PyaarSettings;
+
+  const clamp01 = (x) => Math.min(1, Math.max(0, x));
+  const quantile = (values, q) => {
+    const a = values.slice().sort((x, y) => x - y);
+    return a.length ? a[Math.min(a.length - 1, Math.floor(q * a.length))] : 0;
+  };
+  // Index of the last item starting at or before time t (-1 if none)
+  function lastAt(list, t) {
+    let lo = 0, hi = list.length - 1, found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid].t <= t) { found = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return found;
+  }
+
+  function prepare(id, data) {
+    const beats = data.beats || [], segments = data.segments || [];
+    const bars = data.bars || [], sections = data.sections || [];
+    if (beats.length < 8 || segments.length < 8) return null;
+
+    // Tempo from the beat grid. The analysis often doubles slow songs
+    // (e.g. 216 for a 108 song), so fold it into a musical range.
+    const gaps = beats.slice(1).map((b, i) => b.start - beats[i].start);
+    let bpm = 60 / quantile(gaps, 0.5);
+    while (bpm > 165) bpm /= 2;
+    while (bpm < 60) bpm *= 2;
+
+    // Loudness normalized to this track, so quiet songs still react
+    const loud = segments.map((s) => s.loudness_max);
+    const lo = quantile(loud, 0.1), hi = quantile(loud, 0.97);
+    const level = (db) => clamp01((db - lo) / Math.max(6, hi - lo));
+    const segs = segments.map((s) => ({
+      t: s.start,
+      level: level(s.loudness_max),
+      // the loudness curve: from the start level up to the peak, then on
+      // toward the next segment's start
+      l0: level(s.loudness_start),
+      tp: s.start + s.loudness_max_time,
+      attack: s.loudness_max - s.loudness_start,
+      // timbre[1] is brightness: low means the sound is mostly low end
+      dark: clamp01(0.5 - (s.timbre?.[1] ?? 0) / 260),
+    }));
+
+    // Bright transients (hi-hats, snares): sharp attacks in bright segments
+    const rawShine = segs.map((g) => ({
+      t: g.tp,
+      s: clamp01(g.attack / 12) * (1 - g.dark) * (0.3 + 0.7 * g.level),
+    }));
+    const shineTop = quantile(rawShine.map((h) => h.s), 0.9) || 1;
+    const shine = rawShine.map((h) => ({ t: h.t, s: clamp01(h.s / shineTop) ** 1.4 })).filter((h) => h.s > 0.15);
+
+    // Bass hits: on each beat, the sharpest, darkest attack landing near it
+    const downbeats = bars.map((b) => b.start);
+    let si = 0, di = 0;
+    const raw = beats.map((b) => {
+      while (si < segs.length && segs[si].t < b.start - 0.08) si++;
+      let best = 0;
+      for (let k = si; k < segs.length && segs[k].t < b.start + 0.08; k++) {
+        const g = segs[k];
+        best = Math.max(best, clamp01(g.attack / 14) * (0.35 + 0.65 * g.level) * (0.4 + 0.6 * g.dark));
+      }
+      while (di < downbeats.length - 1 && downbeats[di + 1] <= b.start + 0.06) di++;
+      const down = Math.abs((downbeats[di] ?? -9) - b.start) < 0.06;
+      return { t: b.start, s: best * (down ? 1.25 : 1) };
+    });
+    // Normalized, then curved so strong hits stand clearly above the rest
+    const top = quantile(raw.map((h) => h.s), 0.9) || 1;
+    const hits = raw.map((h) => ({ t: h.t, s: clamp01(h.s / top) ** 1.6 })).filter((h) => h.s > 0.08);
+
+    return {
+      id, bpm, hits, segs, shine,
+      beatGap: quantile(gaps, 0.5),
+      sections: sections.map((s) => ({ t: s.start, db: s.loudness })),
+    };
+  }
+
+  let track = null, loadingId = null, retryAt = 0;
+  async function load(id) {
+    loadingId = id;
+    track = null;
+    try {
+      const token = Spicetify.Platform.AuthorizationAPI.getState().token.accessToken;
+      const r = await fetch(
+        `https://spclient.wg.spotify.com/audio-attributes/v1/audio-analysis/${id}?format=json`,
+        { headers: { Authorization: "Bearer " + token } });
+      if (!r.ok) throw new Error("analysis " + r.status);
+      const t = prepare(id, await r.json());
+      if (loadingId === id) track = t;
+    } catch {
+      // No analysis (local files, podcasts, very new releases) or the request
+      // failed: stay calm, and try once more a little later
+      if (loadingId === id && !retryAt) retryAt = performance.now() + 8000;
+    }
+  }
+
+  const ease = (cur, target, dt, tau) => cur + (target - cur) * (1 - Math.exp(-dt / tau));
+  let last = performance.now(), baseSpeed = 1, energy = 0.5, loud = 0.5, bloom = 0, build = 0;
+
+  // An envelope over a list of hits: the last ones fading, the next one
+  // rising in just before it lands
+  function envelope(list, pos, decay, rise) {
+    const i = lastAt(list, pos);
+    let v = 0;
+    for (let j = Math.max(0, i - 1); j <= i + 1 && j < list.length; j++) {
+      const h = list[j], d = pos - h.t;
+      const env = d >= 0 ? Math.exp(-d / decay) : d > -rise ? (1 + d / rise) ** 2 : 0;
+      v = Math.max(v, h.s * env);
+    }
+    return v;
+  }
+
+  // The loudness at this moment, following each segment's swell and fade
+  function loudnessAt(t, pos) {
+    const i = Math.max(0, lastAt(t.segs, pos));
+    const g = t.segs[i], next = t.segs[i + 1];
+    if (pos < g.tp) return g.l0 + (g.level - g.l0) * clamp01((pos - g.t) / Math.max(0.01, g.tp - g.t));
+    const end = next ? next.t : g.tp + 0.5;
+    return g.level + ((next ? next.l0 : g.level) - g.level) * clamp01((pos - g.tp) / Math.max(0.01, end - g.tp));
+  }
+  let lastSection = -1;
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    if (document.hidden) return;
+
+    const player = window.Spicetify?.Player;
+    const uri = player?.data?.item?.uri || "";
+    const id = uri.startsWith("spotify:track:") ? uri.split(":")[2] : null;
+    const on = !!settings?.get("musicSync");
+    // The center light's "Follow the tempo" needs the analysis too, even with
+    // music sync off
+    const tempoOn = settings?.get("lightTempo") === true && settings?.get("centerLight") !== false;
+    const want = on || tempoOn;
+    if (want && id && id !== loadingId) { retryAt = 0; load(id); }
+    if (want && id && !track && retryAt && now > retryAt) { retryAt = -1; load(id); }
+
+    const playing = want && track && track.id === id && !player.data.isPaused ? track : null;
+    const t = on ? playing : null;
+    // The center light's speed: the tempo alone (110 bpm is the calm default)
+    sync.tempo = ease(sync.tempo, tempoOn && playing ? Math.min(1.6, Math.max(0.7, playing.bpm / 110)) : 1, dt, 1.5);
+    const k = LEVELS[settings?.get("syncIntensity")] ?? 1;
+
+    if (t) {
+      const pos = player.getProgress() / 1000;
+
+      // Bass: each hit fades well before the next beat, so the bass punches
+      sync.pulse = envelope(t.hits, pos, Math.min(0.3, 0.42 * t.beatGap), 0.07) * k;
+      // Bright sounds: quick glints
+      sync.shimmer = envelope(t.shine, pos, 0.09, 0.03) * k;
+
+      // Build-ups and drops: is a clearly louder section coming?
+      const si = lastAt(t.sections, pos);
+      const cur = t.sections[si], next = t.sections[si + 1];
+      let rising = 0;
+      if (cur && next) {
+        const jump = clamp01((next.db - cur.db - 2) / 6);
+        const lead = Math.min(8, 16 * (60 / t.bpm)); // about 4 bars
+        rising = jump * clamp01(1 - (next.t - pos) / lead) ** 2;
+      }
+      build = ease(build, rising, dt, 0.25);
+
+      // The loudness moment to moment (lightly smoothed)
+      loud = ease(loud, loudnessAt(t, pos), dt, 0.05);
+
+      // Energy: how loud this part is (the same loudness curve, eased slowly)
+      energy = ease(energy, loud, dt, 0.7);
+
+      // Speed: the tempo (110 bpm is the calm default), a little faster when loud
+      baseSpeed = ease(baseSpeed, Math.min(1.6, Math.max(0.7, t.bpm / 110)) * (0.88 + 0.24 * energy), dt, 1.5);
+
+      // Sections: count steps forward (a seek just re-syncs)
+      const section = lastAt(t.sections, pos);
+      if (section === lastSection + 1 && section > 0) {
+        // A louder section just landed: bloom
+        const jump = clamp01((t.sections[section].db - t.sections[section - 1].db - 2) / 6);
+        bloom = Math.max(bloom, jump);
+      }
+      lastSection = section;
+    } else {
+      sync.pulse = ease(sync.pulse, 0, dt, 0.15);
+      sync.shimmer = ease(sync.shimmer, 0, dt, 0.15);
+      energy = ease(energy, 0.5, dt, 1);
+      loud = ease(loud, 0.5, dt, 0.5);
+      build = ease(build, 0, dt, 0.5);
+      baseSpeed = ease(baseSpeed, 1, dt, 1.5);
+    }
+    bloom *= Math.exp(-dt / 1.8);
+    sync.energy = energy;
+    sync.amount = ease(sync.amount, t ? k : 0, dt, 0.8);
+    // each swell and fade, measured against this part's own loudness
+    sync.breath = sync.amount * (loud - energy);
+    sync.build = build * k;
+    sync.bloom = bloom * k;
+    sync.speed = baseSpeed + 0.3 * sync.pulse + 0.6 * sync.build + 0.35 * sync.bloom;
+  }
+  requestAnimationFrame(frame);
+})();
+
+// Pyaar: the flowing liquid-glass ribbon behind the library's frosted glass.
+// A small WebGL shader draws a wide, twisting sheet of liquid glass standing
+// upright and flowing slowly, colored only with the current cover's colors
+// (--mt-p1..5, --mt-art*). It renders at low resolution because the glass
+// blurs it anyway. With music sync (window.PyaarSync) it flows with the
+// song's tempo, swells and flashes on bass hits, and glows with its loudness.
+(function liquidRibbon() {
+  const VERT = `
+    attribute vec2 pos;
+    void main() { gl_Position = vec4(pos, 0.0, 1.0); }`;
+
+  const FRAG = `
+    precision mediump float;
+    uniform vec2 res;
+    uniform float t;
+    uniform float energy;
+    uniform float pulse;   // bass hit, 0..1.5
+    uniform float shimmer; // bright sounds (hi-hats, snares)
+    uniform vec3 p0, p1, p2, p3, p4, base, hi, bg;
+
+    // The cover's colors blended smoothly: a slow, continuous drift through them
+    vec3 accent(float x) {
+      float a = 0.5 + 0.5 * sin(x);
+      float b = 0.5 + 0.5 * sin(x * 0.73 + 2.1);
+      float c = 0.5 + 0.5 * sin(x * 0.51 + 4.2);
+      vec3 col = p0 * (0.6 + a) + p1 * b + p2 * c + p3 * a * b * 0.6 + p4 * (1.0 - a) * c * 0.6;
+      return col / (1.6 + b + c + a * b * 0.6 + (1.0 - a) * c * 0.6);
+    }
+
+    // One twisting sheet of liquid glass, standing upright.
+    vec4 sheet(vec2 uv, float aspect, float ph, float amp, float width, float speed) {
+      float y = uv.y;
+      float x = (uv.x - 0.5) * aspect;
+      float tt = t * speed;
+      // The spine sways, the width breathes, and the sheet twists as it flows
+      float c = amp * (sin(y * 1.9 + tt * 0.9 + ph) * 0.65 + sin(y * 3.9 - tt * 1.1 + ph * 1.7) * 0.35);
+      // A bulge travels down the sheet as it flows
+      // (and swells on each bass hit)
+      float w = width * (1.0 + 0.22 * sin(y * 1.3 + tt * 0.6 + ph * 0.8) + 0.2 * sin(y * 2.6 - tt * 1.4 + ph))
+              * (1.0 + 0.2 * pulse);
+      // Twists travel along it rather than turning in place
+      float th = y * 3.3 - tt * 1.2 + ph + 0.6 * sin(y * 1.2 + tt * 0.5 + ph);
+      float ct = cos(th);
+      float cw = w * (0.18 + 0.82 * abs(ct));
+      float s = clamp((x - c) / cw, -1.6, 1.6);
+      float inside = smoothstep(1.0, 0.72, abs(s));
+
+      // The surface curves across its width: light slides over it smoothly
+      float na = th + s * (0.8 + 0.3 * sin(y * 2.0 + tt));
+      float facing = cos(na - 0.5);
+      float broad = 0.5 + 0.5 * facing;
+      float sheen = pow(max(facing, 0.0), 6.0);
+      float spec = pow(max(facing, 0.0), 22.0);
+      float edge = smoothstep(0.45, 1.0, abs(s));
+
+      // Color: the cover's main color fills the sheet; its other colors drift
+      // slowly along it and gather toward the edges
+      vec3 acc = accent(y * 1.6 - tt * 0.5 + ph + s * 0.6);
+      vec3 col = mix(base, acc, 0.35 + 0.45 * edge);
+      // A second, softer reflection from the other side, like glossy folds
+      float back = pow(max(cos(na + 2.4), 0.0), 10.0);
+      // Bass hits flash the sheen and the highlight
+      vec3 body = col * (0.18 + 0.5 * broad) + acc * edge * 0.5 + hi * sheen * (0.4 + 0.45 * pulse)
+                + hi * back * 0.25 + vec3(1.0) * spec * (0.55 + 0.5 * pulse + 0.7 * shimmer);
+
+      float glow = exp(-pow(abs(x - c) / (cw + 0.05 + 0.04 * pulse), 2.0) * 1.8);
+      return vec4(body * inside + col * glow * (0.12 + 0.12 * pulse) * (1.0 - inside), inside);
+    }
+
+    void main() {
+      vec2 uv = gl_FragCoord.xy / res;
+      uv.y = 1.0 - uv.y;
+      float aspect = res.x / res.y;
+      vec3 c = bg;
+      vec4 b = sheet(uv, aspect, 2.6, 0.08, 0.08, 0.27);
+      vec4 a = sheet(uv, aspect, 0.0, 0.11, 0.16, 0.34);
+      c = mix(c, c * 0.5 + b.rgb * 0.6, b.a * 0.7) + b.rgb * 0.6 * (1.0 - b.a);
+      c = mix(c, c * 0.3 + a.rgb, a.a * 0.88) + a.rgb * (1.0 - a.a);
+      gl_FragColor = vec4(c * (0.5 + 0.4 * energy) * (1.0 + 0.12 * pulse), 1.0);
+    }`;
+
+  const SCALE = 0.5; // render at half the panel's CSS size; the glass blurs it
+  let canvas, gl, prog, loc = {};
+  const colors = { p0: [0.5, 0.5, 0.5], p1: [0.5, 0.5, 0.5], p2: [0.5, 0.5, 0.5], p3: [0.5, 0.5, 0.5], p4: [0.5, 0.5, 0.5], base: [0.5, 0.5, 0.5], hi: [0.8, 0.8, 0.8], bg: [0.02, 0.02, 0.03] };
+  const target = JSON.parse(JSON.stringify(colors));
+  // The love burst's hot pink and violet (see loveBurst)
+  const LOVE = { p0: [1, 0.25, 0.9], p1: [1, 0.14, 0.59], p2: [0.59, 0.33, 1], p3: [1, 0.55, 0.96], p4: [0.45, 0.3, 1], base: [1, 0.25, 0.9], hi: [1, 0.85, 0.98], bg: [0.08, 0.03, 0.22] };
+  let energy = 1;
+
+  function parseColor(str) {
+    const m = str.match(/[\d.]+/g);
+    return m && m.length >= 3 ? [m[0] / 255, m[1] / 255, m[2] / 255] : null;
+  }
+
+  function readTheme() {
+    const cs = getComputedStyle(document.documentElement);
+    ["p1", "p2", "p3", "p4", "p5"].forEach((name, i) => {
+      const c = parseColor(cs.getPropertyValue("--mt-" + name));
+      if (c) target["p" + i] = c;
+    });
+    const base = parseColor(cs.getPropertyValue("--mt-art"));
+    if (base) target.base = base;
+    const hi = parseColor(cs.getPropertyValue("--mt-art-light"));
+    if (hi) target.hi = hi;
+    const dark = parseColor(cs.getPropertyValue("--mt-art-dark"));
+    if (dark) target.bg = dark.map((v) => v * 0.55);
+    const e = parseFloat(cs.getPropertyValue("--mt-energy"));
+    if (Number.isFinite(e)) energy = e;
+  }
+
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+    return sh;
+  }
+
+  function setup() {
+    canvas = document.createElement("canvas");
+    canvas.id = "mt-flow";
+    gl = canvas.getContext("webgl", { antialias: false, alpha: false, preserveDrawingBuffer: false });
+    if (!gl) return false;
+    prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const pos = gl.getAttribLocation(prog, "pos");
+    gl.enableVertexAttribArray(pos);
+    gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+    for (const n of ["res", "t", "energy", "pulse", "shimmer", "p0", "p1", "p2", "p3", "p4", "base", "hi", "bg"]) loc[n] = gl.getUniformLocation(prog, n);
+    return true;
+  }
+
+  function attach() {
+    const host = document.getElementById("Desktop_LeftSidebar_Id");
+    if (host && canvas.parentElement !== host) host.prepend(canvas);
+    return host;
+  }
+
+  let last = 0, clock = performance.now() / 1000;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    // Its own clock, so the music sync can speed the flow up and down smoothly
+    const sync = window.PyaarSync;
+    clock += Math.min(0.1, (now - last) / 1000) * (sync?.speed ?? 1);
+    if (document.hidden) { last = now; return; }
+    const host = attach();
+    if (!host) return;
+    const w = Math.max(2, Math.round(host.clientWidth * SCALE));
+    const h = Math.max(2, Math.round(host.clientHeight * SCALE));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      gl.viewport(0, 0, w, h);
+    }
+    // Ease toward the current song's colors
+    const k = Math.min(1, (now - last) / 900);
+    last = now;
+    for (const key in colors) colors[key] = colors[key].map((v, i) => v + (target[key][i] - v) * k);
+    gl.uniform2f(loc.res, w, h);
+    gl.uniform1f(loc.t, clock);
+    // Louder parts, each swell, build-ups and drops all lift its glow
+    // The love burst (window.__mtLove) turns the ribbon hot pink for a moment
+    const love = window.__mtLove || 0;
+    gl.uniform1f(loc.energy, energy + love * 0.8 + (sync
+      ? sync.amount * (sync.energy - 0.5) * 0.7 + sync.breath * 0.3 + sync.build * 0.15 + sync.bloom * 0.3
+      : 0));
+    gl.uniform1f(loc.pulse, sync?.pulse ?? 0);
+    gl.uniform1f(loc.shimmer, sync?.shimmer ?? 0);
+    for (const key of ["p0", "p1", "p2", "p3", "p4", "base", "hi", "bg"]) {
+      gl.uniform3fv(loc[key], love ? colors[key].map((v, i) => v + (LOVE[key][i] - v) * love) : colors[key]);
+    }
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  function start() {
+    if (!document.body) return setTimeout(start, 300);
+    try {
+      if (!setup()) return;
+    } catch (err) {
+      console.warn("Pyaar ribbon shader failed:", err);
+      return;
+    }
+    document.documentElement.setAttribute("data-mt-flow", "");
+    readTheme();
+    setInterval(readTheme, 500);
+    requestAnimationFrame(frame);
+  }
+  start();
+})();
+
+// Pyaar: glass light behind the top bar and the center.
+// A slow wave rolls over a sheet of black glass covering the whole center and
+// top bar, with a few broad panels tilting on their own rhythm. One grazing
+// light drifts slowly, so long, smooth bands of light come and go, with a
+// white sheen, a thin-film sheen in the artwork's own colors in proportion
+// (--mt-r1..12) and very fine, faint lines. Everywhere else stays black.
+// With "Follow the tempo" on in Pyaar Settings (off by default), only its
+// speed follows the song: the whole pattern moves faster or slower with the
+// song's tempo (window.PyaarSync.tempo). Nothing else in it reacts to the music.
+// "Center light" in the Pyaar menu turns it off (pure black center).
+(function silkLight() {
+  const VERT = `
+    attribute vec2 pos;
+    void main() { gl_Position = vec4(pos, 0.0, 1.0); }`;
+
+  // Anything that is the same for the whole screen (the panels' drift and
+  // tilt, the light's direction) is worked out once per frame in JS below,
+  // not once per pixel. The surface returns its slope along with its height,
+  // so each pixel evaluates it once instead of three times.
+  const FRAG = `
+    precision highp float;
+    uniform vec2 res;
+    uniform vec4 skip;     // covered by the library's solid panel: nothing to draw
+    uniform float t;
+    uniform float energy;
+    uniform float crease;  // the creases' slow sway
+    uniform vec3 H;        // halfway between the light and the viewer
+    uniform vec4 pan[6];   // each panel: center xy, tilt, size
+    uniform vec2 pdir[6];  // each panel's tilt direction
+    uniform vec3 rc[12];   // the artwork's colors, in proportion
+
+    // A smooth loop through the artwork's colors, in proportion
+    vec3 film(float x) {
+      x = fract(x) * 12.0;
+      float f = smoothstep(0.0, 1.0, fract(x));
+      if (x < 1.0) return mix(rc[0], rc[1], f);
+      if (x < 2.0) return mix(rc[1], rc[2], f);
+      if (x < 3.0) return mix(rc[2], rc[3], f);
+      if (x < 4.0) return mix(rc[3], rc[4], f);
+      if (x < 5.0) return mix(rc[4], rc[5], f);
+      if (x < 6.0) return mix(rc[5], rc[6], f);
+      if (x < 7.0) return mix(rc[6], rc[7], f);
+      if (x < 8.0) return mix(rc[7], rc[8], f);
+      if (x < 9.0) return mix(rc[8], rc[9], f);
+      if (x < 10.0) return mix(rc[9], rc[10], f);
+      if (x < 11.0) return mix(rc[10], rc[11], f);
+      return mix(rc[11], rc[0], f);
+    }
+
+    // The surface's height (x) and slope (yz): overlapping panels of black
+    // glass, each a soft bowl tilting on its own rhythm, a broad slow
+    // undulation so light can land anywhere, plus soft creases and a
+    // travelling ripple
+    vec3 surface(vec2 p) {
+      vec3 z = vec3(0.0);
+      for (int i = 0; i < 6; i++) {
+        vec2 d = p - pan[i].xy;
+        float tilt = pan[i].z, size = pan[i].w;
+        float dd = dot(d, d);
+        float w = exp(-1.4 * dd / (size * size));
+        float g = tilt * dot(d, pdir[i]) + 0.45 * dd / size;
+        z += w * vec3(g, tilt * pdir[i] + (0.9 / size - 2.8 * g / (size * size)) * d);
+      }
+      float a = p.x * 2.3 + t * 0.38, b = p.y * 1.9 - t * 0.31;
+      float sa = sin(a), cb = cos(b);
+      z += 0.32 * vec3(sa * cb, 2.3 * cos(a) * cb, -1.9 * sa * sin(b));
+      float c = p.x * 1.1 - p.y * 2.7 + t * 0.27 + 1.3;
+      z += 0.18 * vec3(sin(c), cos(c) * vec2(1.1, -2.7));
+      float k = dot(p, vec2(5.2, 3.1)) + crease;
+      z += 0.028 * vec3(sin(k), cos(k) * vec2(5.2, 3.1));
+      vec2 q = p - vec2(0.15, 0.1);
+      float len = max(length(q), 1e-4);
+      float m = len * 6.0 - t * 0.9;
+      z += 0.022 * vec3(sin(m), 6.0 * cos(m) * q / len);
+      return z;
+    }
+
+    void main() {
+      vec2 fc = gl_FragCoord.xy;
+      if (fc.x < skip.z && fc.y > skip.y && fc.y < skip.w && fc.x > skip.x) {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+      }
+      vec2 uv = fc / res;
+      vec2 p = (uv - 0.5) * vec2(res.x / res.y, 1.0);
+
+      // (read a hair up and right, where the old three-sample slope landed,
+      // so the bands sit exactly where they always have)
+      vec3 s = surface(p + 0.0015);
+      // (and the height stepped back to this pixel, which keeps the fine
+      // lines exactly in place)
+      float h0 = s.x - 0.0015 * (s.y + s.z);
+      vec3 n = normalize(vec3(-s.yz, 1.0));
+
+      // One grazing light, slowly circling, so the lit places keep changing
+      float nh = max(dot(n, H), 0.0);
+      float nv = n.z;
+
+      // Black glass: light only where the surface turns into the light
+      // Wide, soft bands: light lands over a broad range of angles
+      float land = pow(smoothstep(0.77, 1.0, nh), 1.2);
+      float sheen = pow(nh, 200.0);
+      // a soft glow around the bands, so the pattern's shape reads
+      float near = pow(smoothstep(0.5, 1.0, nh), 2.0);
+
+      // Thin-film color shifting with angle and position, with fine lines
+      float thick = length(p * vec2(1.0, 1.3)) * 2.0 + h0 * 3.0;
+      // Changes slowly across the screen: large areas take one color at a time
+      vec3 irid = film(nv * 0.6 + thick * 0.12 + t * 0.04);
+      float lines = 0.95 + 0.05 * sin(thick * 900.0);
+
+      // Where light lands the artwork's color shows at its true brightness
+      // (dimming a color on black shifts its hue, e.g. yellow turns olive)
+      vec3 col = irid * (land * 1.0 + near * 0.24) * lines + vec3(1.0) * sheen * 0.25;
+      col = min(col, vec3(1.0)) * (0.84 + 0.15 * energy);
+      gl_FragColor = vec4(col, 1.0);
+    }`;
+
+  // The panels: center (drifting a little), tilt direction, size, and the
+  // speed and phase of their tilt
+  const PANELS = [
+    { c: (dr) => [-0.25 + 0.06 * Math.sin(dr), 0.22], dir: [0.8, 0.6], size: 0.45, speed: 0.62, ph: 0.0 },
+    { c: (dr) => [0.38, 0.28 + 0.05 * Math.cos(dr * 1.3)], dir: [-0.7, 0.7], size: 0.5, speed: 0.55, ph: 1.7 },
+    { c: (dr) => [0.12 + 0.07 * Math.cos(dr), -0.18], dir: [0.2, -1.0], size: 0.55, speed: 0.7, ph: 3.1 },
+    { c: () => [-0.05, 0.48], dir: [1.0, 0.1], size: 0.4, speed: 0.66, ph: 4.4 }, // through the top bar
+    { c: (dr) => [0.6 + 0.04 * Math.sin(dr * 0.8), -0.32], dir: [-0.5, -0.9], size: 0.45, speed: 0.58, ph: 5.6 },
+    { c: () => [-0.38, -0.3], dir: [0.9, -0.4], size: 0.4, speed: 0.74, ph: 2.5 },
+  ];
+  const pan = new Float32Array(24);
+  const pdir = new Float32Array(PANELS.flatMap((P) => {
+    const l = Math.hypot(P.dir[0], P.dir[1]);
+    return [P.dir[0] / l, P.dir[1] / l];
+  }));
+  const H = new Float32Array(3);
+
+  // Everything that is the same for every pixel this frame
+  function frameUniforms(t) {
+    const dr = t * 0.05;
+    PANELS.forEach((P, i) => {
+      const [cx, cy] = P.c(dr);
+      pan[i * 4] = cx;
+      pan[i * 4 + 1] = cy;
+      pan[i * 4 + 2] = Math.sin(t * P.speed + P.ph) * 0.7 + Math.sin(t * P.speed * 0.53 + P.ph * 2.1) * 0.25;
+      pan[i * 4 + 3] = P.size;
+    });
+    // One grazing light, slowly circling
+    const la = t * 0.22;
+    let lx = 0.6 * Math.cos(la), ly = 0.6 * Math.sin(la) + 0.15, lz = 0.26;
+    let l = Math.hypot(lx, ly, lz);
+    lx /= l; ly /= l; lz = lz / l + 1;
+    l = Math.hypot(lx, ly, lz);
+    H[0] = lx / l; H[1] = ly / l; H[2] = lz / l;
+    return 0.8 * Math.sin(t * 0.35); // the creases' sway
+  }
+
+  const SCALE = 1;     // full resolution, so the fine lines stay crisp
+  const BASE_SPEED = 1;   // this pattern's own pace (it moves faster than the slow wave did)
+  const FPS = 30;      // the motion is slow, 30fps is plenty
+  let canvas, gl, prog, loc = {};
+  const colors = new Float32Array(36).map((_, i) => (i % 3 === 2 ? 0.65 : 0.6));
+  const target = colors.slice();
+  // The love burst's hot pink and violet (see loveBurst), mixed in while it plays
+  const LOVE_R = new Float32Array([
+    1, 0.25, 0.9, 1, 0.42, 0.95, 1, 0.14, 0.59, 1, 0.25, 0.9, 0.75, 0.3, 1, 0.59, 0.33, 1,
+    1, 0.42, 0.95, 1, 0.25, 0.85, 1, 0.55, 0.96, 0.48, 0.36, 1, 1, 0.14, 0.59, 1, 0.25, 0.9,
+  ]);
+  const loveMix = new Float32Array(36);
+  let energy = 1;
+  // The part of the screen under the library's solid panel, in CSS pixels
+  let covered = null;
+
+  function parseColor(str) {
+    const m = str.match(/[\d.]+/g);
+    return m && m.length >= 3 ? [m[0] / 255, m[1] / 255, m[2] / 255] : null;
+  }
+
+  function readTheme() {
+    const cs = getComputedStyle(document.documentElement);
+    for (let i = 0; i < 12; i++) {
+      const c = parseColor(cs.getPropertyValue("--mt-r" + (i + 1)));
+      if (c) target.set(c, i * 3);
+    }
+    const e = parseFloat(cs.getPropertyValue("--mt-energy"));
+    if (Number.isFinite(e)) energy = e;
+
+    // The library hides the light where its background is solid: below its
+    // rounded top corners, and only while it is fully opaque
+    covered = null;
+    const lib = document.getElementById("Desktop_LeftSidebar_Id");
+    if (lib) {
+      const ls = getComputedStyle(lib);
+      const bg = ls.backgroundColor;
+      const solid = !/rgba|\//.test(bg) && bg !== "transparent" && ls.opacity === "1";
+      const r = lib.getBoundingClientRect();
+      const corner = parseFloat(ls.borderTopLeftRadius) || 0;
+      if (solid && r.width > 0) covered = { x0: r.left, x1: r.right, y0: r.top + corner + 1, y1: r.bottom };
+    }
+  }
+
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+    return sh;
+  }
+
+  function setup() {
+    canvas = document.createElement("canvas");
+    canvas.id = "mt-silk";
+    gl = canvas.getContext("webgl", { antialias: false, alpha: false });
+    if (!gl) return false;
+    prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const pos = gl.getAttribLocation(prog, "pos");
+    gl.enableVertexAttribArray(pos);
+    gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+    for (const n of ["res", "skip", "t", "energy", "crease", "H", "pan", "pdir", "rc"]) loc[n] = gl.getUniformLocation(prog, n);
+    gl.uniform2fv(loc.pdir, pdir);
+    return true;
+  }
+
+  let last = 0, lastDraw = 0, clock = performance.now() / 1000, host = null, shown = true;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (document.hidden || now - lastDraw < 1000 / FPS - 2) return;
+    // Its own clock, so the song's tempo can speed it up and down smoothly
+    clock += Math.min(0.1, (now - lastDraw) / 1000) * BASE_SPEED * (window.PyaarSync?.tempo ?? 1);
+    lastDraw = now;
+    // Turned off in the Pyaar menu: the center stays pure black
+    const on = window.PyaarSettings?.get("centerLight") !== false;
+    if (on !== shown) canvas.style.display = (shown = on) ? "" : "none";
+    if (!on) return;
+    if (!host?.isConnected) host = document.querySelector(".Root__top-container");
+    if (!host) return;
+    if (canvas.parentElement !== host) host.prepend(canvas);
+    const w = Math.max(2, Math.round(host.clientWidth * SCALE));
+    const h = Math.max(2, Math.round(host.clientHeight * SCALE));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      gl.viewport(0, 0, w, h);
+    }
+    const k = Math.min(1, (now - last) / 1200);
+    last = now;
+    for (let i = 0; i < 36; i++) colors[i] += (target[i] - colors[i]) * k;
+    const crease = frameUniforms(clock);
+    gl.uniform2f(loc.res, w, h);
+    // (in the shader's pixels, counted from the bottom)
+    if (covered) gl.uniform4f(loc.skip, covered.x0 * SCALE, h - covered.y1 * SCALE, covered.x1 * SCALE, h - covered.y0 * SCALE);
+    else gl.uniform4f(loc.skip, 0, 0, 0, 0);
+    gl.uniform1f(loc.t, clock);
+    // The love burst (window.__mtLove) turns the light hot pink and violet
+    const love = window.__mtLove || 0;
+    for (let i = 0; i < 36; i++) loveMix[i] = colors[i] + (LOVE_R[i] - colors[i]) * love;
+    gl.uniform1f(loc.energy, energy + love * 2.5);
+    gl.uniform1f(loc.crease, crease);
+    gl.uniform3fv(loc.H, H);
+    gl.uniform4fv(loc.pan, pan);
+    gl.uniform3fv(loc.rc, loveMix);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  function start() {
+    if (!document.body) return setTimeout(start, 300);
+    try {
+      if (!setup()) return;
+    } catch (err) {
+      console.warn("Pyaar silk shader failed:", err);
+      return;
+    }
+    document.documentElement.setAttribute("data-mt-silk", "");
+    readTheme();
+    setInterval(readTheme, 500);
+    requestAnimationFrame(frame);
+  }
+  start();
+})();
+
+// Pyaar: the glass heart like button.
+// Marks the now-playing "Add to Liked Songs" button as .mt-like and puts a
+// thick glass heart in it (.mt-gh, styled in user.css). Its edges bend the
+// banner's light behind it: a backdrop refraction filter (#mt-heart-lens)
+// pushes each edge pixel outward along the glass's slope, so the rim shows
+// the light around the heart squeezed and bent, like a rounded slab of glass.
+// On hover it glides and catches a glare; a pass that has started finishes
+// after the pointer leaves. Liked, it turns saturated pink glass.
+(function heartLike() {
+  // A chubby heart in a 32 x 30 box, drawn at 75% inside a 34 x 32 frame
+  const HEART = "M16 28.5C6 21.5 1.5 15.8 1.5 9.8 1.5 5.2 5 1.8 9.2 1.8c2.9 0 5.4 1.6 6.8 4 1.4-2.4 3.9-4 6.8-4 4.2 0 7.7 3.4 7.7 8 0 6-4.5 11.7-14.5 18.7z";
+  const PLACE = "translate(5 4.75) scale(0.75)";
+  const NS = "http://www.w3.org/2000/svg";
+
+  // The refraction map: red/green hold how far each pixel looks sideways.
+  // A soft "pillow" height field of the heart; its slope is steepest at the
+  // rim, so the flat middle stays clear and the edges bend strongly.
+  function lensMap() {
+    const S = 4, W = 34 * S, H = 32 * S;
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = H;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    const shape = new Path2D(HEART);
+    const draw = (blur) => {
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.filter = "none";
+      g.fillStyle = "#000";
+      g.fillRect(0, 0, W, H);
+      g.filter = blur ? `blur(${blur}px)` : "none";
+      g.setTransform(S * 0.75, 0, 0, S * 0.75, 5 * S, 4.75 * S);
+      g.fillStyle = "#fff";
+      g.fill(shape);
+      return g.getImageData(0, 0, W, H).data;
+    };
+    const inside = draw(0), h = draw(3.5 * S);
+    const gx = new Float32Array(W * H), gy = new Float32Array(W * H);
+    let max = 1e-6;
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const i = y * W + x;
+        if (inside[i * 4] < 128) continue;
+        gx[i] = (h[(i + 1) * 4] - h[(i - 1) * 4]) / 2;
+        gy[i] = (h[(i + W) * 4] - h[(i - W) * 4]) / 2;
+        max = Math.max(max, Math.hypot(gx[i], gy[i]));
+      }
+    }
+    const out = g.createImageData(W, H);
+    for (let i = 0; i < W * H; i++) {
+      // outward: against the slope, toward the light beyond the edge; eased
+      // so the middle stays clear and the bend gathers at the rim
+      const m = Math.hypot(gx[i], gy[i]) / max;
+      const k = m > 0 ? m ** 0.6 / m / max : 0;
+      out.data[i * 4] = 128 - 127 * gx[i] * k;
+      out.data[i * 4 + 1] = 128 - 127 * gy[i] * k;
+      out.data[i * 4 + 2] = 128;
+      out.data[i * 4 + 3] = 255;
+    }
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.putImageData(out, 0, 0);
+    return c.toDataURL();
+  }
+
+  function addLensFilter() {
+    if (document.getElementById("mt-heart-lens")) return;
+    const holder = document.createElementNS(NS, "svg");
+    holder.setAttribute("width", "0");
+    holder.setAttribute("height", "0");
+    holder.setAttribute("aria-hidden", "true");
+    holder.style.position = "absolute";
+    holder.innerHTML = `
+      <filter id="mt-heart-lens" x="0" y="0" width="34" height="32" filterUnits="userSpaceOnUse"
+              primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+        <feImage href="${lensMap()}" x="0" y="0" width="34" height="32" preserveAspectRatio="none" result="raw"/>
+        <feGaussianBlur in="raw" stdDeviation="0.7" result="map"/>
+        <feDisplacementMap in="SourceGraphic" in2="map" scale="8" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>`;
+    document.body.append(holder);
+  }
+
+  // The drawn layers over the glass, in the song's colors
+  let uid = 0;
+  function buildHeart() {
+    const n = "mt-gh" + uid++;
+    const wrap = document.createElement("span");
+    wrap.className = "mt-gh";
+    wrap.setAttribute("aria-hidden", "true");
+    wrap.innerHTML = `
+      <span class="mt-gh-lens"></span>
+      <svg class="mt-gh-art" viewBox="0 0 34 32" xmlns="${NS}">
+        <defs>
+          <path id="${n}-s" transform="${PLACE}" d="${HEART}"/>
+          <clipPath id="${n}-c"><use href="#${n}-s"/></clipPath>
+          <radialGradient id="${n}-fill" cx="0.42" cy="0.38" r="0.72">
+            <stop offset="0" style="stop-color: var(--gh-f0); stop-opacity: 0.35"/>
+            <stop offset="0.5" style="stop-color: var(--gh-f1); stop-opacity: 0.75"/>
+            <stop offset="1" style="stop-color: var(--gh-f2); stop-opacity: 1"/>
+          </radialGradient>
+          <linearGradient id="${n}-depth" x1="0" y1="0" x2="0.3" y2="1">
+            <stop offset="0.35" stop-color="#000" stop-opacity="0"/>
+            <stop offset="1" stop-color="#000" stop-opacity="0.75"/>
+          </linearGradient>
+          <linearGradient id="${n}-band" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" style="stop-color: var(--gh-b0)"/>
+            <stop offset="0.5" style="stop-color: var(--gh-b1)"/>
+            <stop offset="1" style="stop-color: var(--gh-b2)"/>
+          </linearGradient>
+          <linearGradient id="${n}-rim" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+            <stop offset="0.4" stop-color="#fff" stop-opacity="0.4"/>
+            <stop offset="0.7" stop-color="#fff" stop-opacity="0.3"/>
+            <stop offset="1" stop-color="#fff" stop-opacity="0.9"/>
+          </linearGradient>
+          <linearGradient id="${n}-glare" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+            <stop offset="0.5" stop-color="#fff" stop-opacity="0.9"/>
+            <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+          </linearGradient>
+          <filter id="${n}-soft" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="0.55"/>
+          </filter>
+        </defs>
+        <g clip-path="url(#${n}-c)">
+          <use class="mt-gh-fill" href="#${n}-s" fill="url(#${n}-fill)"/>
+          <use class="mt-gh-depth" href="#${n}-s" fill="url(#${n}-depth)"/>
+          <use class="mt-gh-band" href="#${n}-s" fill="none" stroke="url(#${n}-band)" stroke-width="5.4" filter="url(#${n}-soft)"/>
+          <g class="mt-gh-spec"><g filter="url(#${n}-soft)">
+            <ellipse cx="11" cy="9.6" rx="3.3" ry="1.6" transform="rotate(-38 11 9.6)" fill="#fff"/>
+            <circle cx="23.4" cy="8.8" r="0.9" fill="#fff"/>
+            <path d="M19.5 23.2 Q24.8 19.6 26.6 14.2" fill="none" stroke="#fff" stroke-width="0.9" stroke-linecap="round" opacity="0.7"/>
+          </g></g>
+          <g class="mt-gh-glare">
+            <rect x="10" y="-8" width="14" height="48" fill="url(#${n}-glare)" transform="rotate(22 17 16)"/>
+          </g>
+        </g>
+        <use class="mt-gh-rim" href="#${n}-s" fill="none" stroke="url(#${n}-rim)" stroke-width="1.15"/>
+      </svg>`;
+    return wrap;
+  }
+
+  function markLikeButton() {
+    const widget = document.querySelector('[data-testid="now-playing-widget"]');
+    if (!widget) return;
+    for (const b of widget.querySelectorAll("button[aria-checked]")) {
+      const label = b.getAttribute("aria-label") || "";
+      const isLike = /liked songs|add to playlist/i.test(label) && !/^hide/i.test(label);
+      b.classList.toggle("mt-like", isLike);
+      const heart = b.querySelector(":scope > .mt-gh");
+      if (isLike && !heart) {
+        addLensFilter();
+        b.append(buildHeart());
+      } else if (!isLike && heart) heart.remove();
+    }
+  }
+
+  // Liking makes Spotify rewrite the button's class (dropping .mt-like) and
+  // swap in its green check. Re-mark it the moment that happens: observer
+  // callbacks run before the next paint, so the green icon never shows and
+  // the heart fills in at the same instant Spotify's state flips.
+  const observer = new MutationObserver(markLikeButton);
+  let watched = null;
+  function watch() {
+    const widget = document.querySelector('[data-testid="now-playing-widget"]');
+    if (widget && widget !== watched) {
+      observer.disconnect();
+      observer.observe(widget, { subtree: true, childList: true, attributes: true, attributeFilter: ["class", "aria-label", "aria-checked"] });
+      watched = widget;
+    }
+    markLikeButton();
+  }
+  setInterval(watch, 700);
+
+  // The same heart, filled with the song's colors, for Pyaar Settings (its
+  // account menu row and window header)
+  window.PyaarGlassHeart = (filled) => {
+    addLensFilter();
+    const heart = buildHeart();
+    if (filled) heart.classList.add("mt-gh-filled");
+    return heart;
+  };
+
+  // Hovering the heart's button (or its menu row / window header) plays the
+  // glide; once the pointer has left, the current pass finishes before it
+  // stops, so the heart never jumps back
+  const HOSTS = ".mt-like, [data-mt-menu], .mt-settings-head";
+  document.addEventListener("pointerover", (e) => {
+    e.target.closest?.(HOSTS)?.querySelector(".mt-gh")?.classList.add("mt-gh-play");
+  });
+  document.addEventListener("animationiteration", (e) => {
+    if (e.animationName !== "mt-gh-glide") return;
+    const heart = e.target;
+    if (!heart.closest(HOSTS)?.matches(":hover")) heart.classList.remove("mt-gh-play");
+  });
+})();
+
+// Pyaar: the love burst. Liking a song sets off a glossy, minimal moment in
+// monochrome purple (3D, smooth, high gloss, soft glow):
+//   charge  the like button's glass heart swells and charges up, lilac
+//           sparks rush in
+//   launch  a white-lilac comet flies from it to the middle of the screen
+//   bloom   a white-hot flash with a lens streak and soft violet rays; a big
+//           clear glass heart pops in as a smooth violet spreads over the
+//           whole window
+//   glass   glossy lilac bars glide through the heart on a diagonal and the
+//           glass refracts them into soft steps; it beats twice, then grows
+//           a little and fades as the purple clears
+// While it plays, the whole theme turns hot pink and violet, then cools back
+// to the song's colors: window.__mtLove (0..1) is read by both shaders, and
+// html[data-mt-love] swaps the color variables in user.css. These colors are
+// fixed on purpose for this moment.
+// Drawn on two canvases over the window: the light (sky, rays, bloom flash)
+// with a screen blend, so it only adds light; the solid parts (the comet, the
+// purple, the bars and the glass heart) in front. The sky and rays stay in
+// the center; the charge, the comet, the purple, the bars and the heart reach
+// over the whole window.
+(function loveBurst() {
+  const END = 3.3;               // overlay done (s)
+  const LOVE_IN = 0.45;          // theme turns hot over this
+  const LOVE_OUT = [2.5, 4.0];   // and cools back to the song's colors here
+  // The purple spreads from START, covers the whole window by FULL and
+  // clears from CLEAR; the glass heart (SIZE × R) leaves from LEAVE
+  const WAVE = { start: 0.95, full: 1.8, clear: 2.75 };
+  const GLASS = { size: 1.3, leave: 2.75 };
+  const SCALE = 0.75;
+
+  const HOT = [255, 64, 228], PINK = [255, 140, 246], DEEP = [255, 36, 150];
+  const PALE = [255, 218, 251], WHITE = [255, 255, 255];
+  // Glossy monochrome purple: violet through
+  // lilac to near white. FOIL is the cycle of tones the sparks, comet and
+  // rays take; GOLD is now a pale lilac highlight.
+  const GOLD = [236, 214, 255], WHITE_HOT = [250, 246, 255];
+  const FOIL = [[150, 96, 250], [184, 136, 255], [214, 182, 255], [236, 220, 255], [196, 150, 255], [166, 112, 252]];
+  const foil = (x) => {
+    x = (((x % 1) + 1) % 1) * FOIL.length;
+    const i = Math.floor(x), f = x - i;
+    return mix(FOIL[i], FOIL[(i + 1) % FOIL.length], f * f * (3 - 2 * f));
+  };
+
+  const rgb = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${Math.max(0, Math.min(1, a))})`;
+  const mix = (a, b, k) => a.map((v, i) => v + (b[i] - v) * k);
+  const clamp01 = (x) => Math.min(1, Math.max(0, x));
+  const ramp = (a, b, t) => { const x = clamp01((t - a) / (b - a)); return x * x * (3 - 2 * x); };
+  const hump = (a, b, t) => (t <= a || t >= b ? 0 : Math.sin(Math.PI * (t - a) / (b - a)));
+  const easeOut = (x) => 1 - Math.pow(1 - clamp01(x), 3);
+  const easeIn = (x) => Math.pow(clamp01(x), 3);
+  const easeOutBack = (x) => { x = clamp01(x); const c = 1.9; return 1 + (c + 1) * (x - 1) ** 3 + c * (x - 1) ** 2; };
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  // A smooth heart, about 2 units wide, centered on its middle
+  const HEART = new Path2D();
+  for (let i = 0; i <= 72; i++) {
+    const t = (Math.PI * 2 * i) / 72;
+    const x = (16 * Math.sin(t) ** 3) / 16;
+    const y = (-(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) - 2.5) / 16;
+    i ? HEART.lineTo(x, y) : HEART.moveTo(x, y);
+  }
+  HEART.closePath();
+
+  // A four-pointed sparkle with a soft glow in the given tint
+  function sparkle(x, y, size, a, tint = PINK) {
+    if (a <= 0 || size <= 0) return;
+    const w = size * 0.18;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, size * 1.1);
+    g.addColorStop(0, rgb(tint, 0.55 * a));
+    g.addColorStop(1, rgb(tint, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(x - size * 1.1, y - size * 1.1, size * 2.2, size * 2.2);
+    ctx.fillStyle = rgb(WHITE, a);
+    ctx.beginPath();
+    ctx.moveTo(x, y - size);
+    ctx.quadraticCurveTo(x + w * 0.3, y - w * 0.3, x + size, y);
+    ctx.quadraticCurveTo(x + w * 0.3, y + w * 0.3, x, y + size);
+    ctx.quadraticCurveTo(x - w * 0.3, y + w * 0.3, x - size, y);
+    ctx.quadraticCurveTo(x - w * 0.3, y - w * 0.3, x, y - size);
+    ctx.fill();
+  }
+
+  let canvas, back, front, ctx, anim = null, start = 0, held = null;
+  let W, H, b, c, clip, R, diag, far, sparks, rays, bars;
+
+  function layout() {
+    const s = SCALE;
+    W = Math.round(innerWidth * s);
+    H = Math.round(innerHeight * s);
+    for (const cv of canvas) { cv.width = W; cv.height = H; }
+    const btn = document.querySelector(".mt-like")?.getBoundingClientRect();
+    const lib = document.getElementById("Desktop_LeftSidebar_Id")?.getBoundingClientRect();
+    const bar = document.querySelector(".main-nowPlayingBar-container")?.getBoundingClientRect();
+    const mv = document.getElementById("main-view")?.getBoundingClientRect();
+    const left = lib ? lib.right : 0;
+    const bottom = bar ? bar.top : innerHeight;
+    clip = { x: left * s, y: 0, w: (innerWidth - left) * s, h: bottom * s };
+    c = mv ? { x: (mv.left + mv.width / 2) * s, y: (mv.top + mv.height * 0.45) * s }
+           : { x: clip.x + clip.w / 2, y: clip.h / 2 };
+    b = btn ? { x: (btn.left + btn.width / 2) * s, y: (btn.top + btn.height / 2) * s }
+            : { x: c.x, y: H - 50 * s };
+    R = Math.min(clip.w, clip.h) * 0.15;   // the big heart's size
+    diag = Math.hypot(clip.w, clip.h);
+    // from the middle to the farthest corner of the window
+    far = Math.max(Math.hypot(c.x, c.y), Math.hypot(W - c.x, c.y), Math.hypot(c.x, H - c.y), Math.hypot(W - c.x, H - c.y));
+  }
+
+  function scatter() {
+    const s = SCALE;
+    // Sparks rushing into the small heart while it charges
+    sparks = Array.from({ length: 18 }, (_, i) => ({
+      ang: rand(0, Math.PI * 2), r0: rand(45, 130) * s, t0: rand(0, 0.38), dur: rand(0.22, 0.34), size: rand(3, 7) * s, hue: i / 18,
+    }));
+    // Soft prismatic rays from the middle
+    rays = Array.from({ length: 28 }, (_, i) => ({
+      a0: (i / 28) * Math.PI * 2 + rand(-0.08, 0.08), w: rand(0.012, 0.04), len: rand(0.55, 1), ph: rand(0, 6), hue: rand(0, 1),
+    }));
+    // The glossy bars gliding through the glass heart: lanes across it (in
+    // heart sizes), a beat apart, and two strays further out
+    const lanes = [-1.25, -0.9, -0.55, -0.2, 0.15, 0.5, 0.85, 1.2, -2.3, 2.1];
+    bars = lanes.map((lane, i) => ({
+      lane: lane + rand(-0.05, 0.05), t0: 1.0 + i * 0.065 + rand(0, 0.04), dur: rand(1.5, 1.7),
+      len: rand(2.0, 3.2), w: rand(0.85, 1.15),
+    }));
+  }
+
+  // The theme's colors: hot while it plays, then back to the song's
+  function setLove(t) {
+    const v = ramp(0, LOVE_IN, t) * (1 - ramp(LOVE_OUT[0], LOVE_OUT[1], t));
+    window.__mtLove = v;
+    return v;
+  }
+
+  // 1. The small heart charging up (outside the center, over the banner)
+  function drawCharge(t) {
+    const s = SCALE;
+    if (t > 1.3) return;
+    const aura = ramp(0, 0.5, t) * (1 - ramp(0.85, 1.3, t));
+    const r = 34 * s * (1 + 0.18 * Math.sin(t * 34) * (t < 0.7 ? 1 : 0.3)) * (1 + 0.6 * ramp(0.6, 0.75, t));
+    const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
+    g.addColorStop(0, rgb(PALE, 0.9 * aura));
+    g.addColorStop(0.35, rgb(HOT, 0.7 * aura));
+    g.addColorStop(1, rgb(DEEP, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(b.x - r, b.y - r, r * 2, r * 2);
+
+    // Rings closing in, twice
+    for (const [a, z] of [[0, 0.34], [0.3, 0.64]]) {
+      const k = (t - a) / (z - a);
+      if (k < 0 || k > 1) continue;
+      ctx.strokeStyle = rgb(a ? PINK : GOLD, 0.85 * Math.sin(Math.PI * k));
+      ctx.lineWidth = 1.6 * s;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, (70 - 60 * easeIn(k)) * s, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // The release: a white shockwave
+    const k = (t - 0.66) / 0.4;
+    if (k > 0 && k < 1) {
+      ctx.strokeStyle = rgb(WHITE, 0.9 * (1 - k));
+      ctx.lineWidth = 3 * s * (1 - k) + 0.5;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, (12 + 90 * easeOut(k)) * s, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // Sparks rushing in
+    ctx.lineCap = "round";
+    for (const p of sparks) {
+      const q = (t - p.t0) / p.dur;
+      if (q < 0 || q > 1) continue;
+      const rr = p.r0 * (1 - easeIn(q));
+      const x = b.x + Math.cos(p.ang) * rr, y = b.y + Math.sin(p.ang) * rr;
+      const tail = rr + 26 * s;
+      ctx.strokeStyle = rgb(foil(p.hue), 0.6 * q);
+      ctx.lineWidth = 1.2 * s;
+      ctx.beginPath();
+      ctx.moveTo(b.x + Math.cos(p.ang) * tail, b.y + Math.sin(p.ang) * tail);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      sparkle(x, y, p.size, clamp01(q * 3), foil(p.hue));
+    }
+  }
+
+  // 2. The comet from the small heart to the middle
+  function cometAt(p) {
+    const cx = b.x + (c.x - b.x) * 0.1, cy = c.y + (b.y - c.y) * 0.25;
+    const u = 1 - p;
+    return { x: u * u * b.x + 2 * u * p * cx + p * p * c.x, y: u * u * b.y + 2 * u * p * cy + p * p * c.y };
+  }
+
+  function drawComet(t) {
+    const s = SCALE;
+    const p = (t - 0.66) / 0.26;
+    if (p < 0 || p > 1.15) return;
+    const head = clamp01(p);
+    const fade = 1 - clamp01((p - 1) / 0.15);
+    ctx.lineCap = "round";
+    for (let i = 0; i < 16; i++) {
+      const p0 = easeIn(head) - (i + 1) * 0.022, p1 = easeIn(head) - i * 0.022;
+      if (p1 <= 0) break;
+      const a = cometAt(Math.max(0, p0)), z = cometAt(p1);
+      ctx.strokeStyle = rgb(i < 2 ? WHITE_HOT : i < 6 ? GOLD : foil(i / 16), fade * (1 - i / 16));
+      ctx.lineWidth = (7 - i * 0.38) * s;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(z.x, z.y);
+      ctx.stroke();
+    }
+    const h = cometAt(easeIn(head));
+    const r = 22 * s;
+    const g = ctx.createRadialGradient(h.x, h.y, 0, h.x, h.y, r);
+    g.addColorStop(0, rgb(WHITE_HOT, fade));
+    g.addColorStop(0.35, rgb(GOLD, 0.75 * fade));
+    g.addColorStop(1, rgb(HOT, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(h.x - r, h.y - r, r * 2, r * 2);
+  }
+
+  // 3. The sky: a deep violet wash over the center, lit from the middle
+  function drawSky(t) {
+    const a = ramp(0.05, 0.6, t) * (1 - ramp(2.4, 3.6, t));
+    if (a <= 0) return;
+    const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, diag * 0.6);
+    g.addColorStop(0, rgb([140, 90, 255], 0.55 * a));
+    g.addColorStop(0.5, rgb([92, 50, 210], 0.6 * a));
+    g.addColorStop(1, rgb([44, 20, 112], 0.7 * a));
+    ctx.fillStyle = g;
+    ctx.fillRect(clip.x, clip.y, clip.w, clip.h);
+  }
+
+  // 4. The bloom flash: white-hot light opening in the middle as the comet
+  //    lands, with a long, thin lens streak
+  function drawBloom(t) {
+    const a = ramp(0.84, 0.95, t) * (1 - ramp(0.98, 1.75, t));
+    if (a <= 0) return;
+    const r = R * 3.4;
+    const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r);
+    g.addColorStop(0, rgb(WHITE_HOT, a));
+    g.addColorStop(0.18, rgb([226, 206, 255], 0.75 * a));
+    g.addColorStop(0.45, rgb([150, 100, 255], 0.3 * a));
+    g.addColorStop(1, rgb([150, 100, 255], 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(c.x - r, c.y - r, r * 2, r * 2);
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.scale(7, 0.1);
+    const s = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+    s.addColorStop(0, rgb(WHITE_HOT, 0.9 * a));
+    s.addColorStop(0.4, rgb(foil(0.92), 0.4 * a));
+    s.addColorStop(1, rgb(foil(0.92), 0));
+    ctx.fillStyle = s;
+    ctx.fillRect(-R, -R, R * 2, R * 2);
+    ctx.restore();
+  }
+
+  // 5. Soft prismatic rays turning slowly around the middle
+  function drawRays(t) {
+    const e = ramp(0.88, 1.08, t) * (1 - ramp(1.7, 2.3, t));
+    if (e <= 0) return;
+    const rot = 0.16 * t;
+    for (const ry of rays) {
+      const ang = ry.a0 + rot, L = diag * ry.len;
+      const flick = 0.75 + 0.25 * Math.sin(t * 6 + ry.ph);
+      const tone = foil(ry.hue + t * 0.12);
+      for (const [wide, alpha] of [[3.2, 0.1], [1, 0.32]]) {
+        const w = ry.w * wide;
+        const g = ctx.createRadialGradient(c.x, c.y, R * 0.3, c.x, c.y, L);
+        g.addColorStop(0, rgb(mix(tone, WHITE, 0.5), e * alpha * flick));
+        g.addColorStop(0.35, rgb(tone, e * alpha * 0.7 * flick));
+        g.addColorStop(1, rgb(tone, 0));
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(c.x, c.y);
+        ctx.lineTo(c.x + Math.cos(ang - w) * L, c.y + Math.sin(ang - w) * L);
+        ctx.lineTo(c.x + Math.cos(ang + w) * L, c.y + Math.sin(ang + w) * L);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+
+  // 6. The glass heart: a big heart of clear glass, like the like button's,
+  //    in a glossy, minimal purple world (3D, smooth, high gloss). Glossy
+  //    lilac bars glide through on a diagonal, and the glass refracts them:
+  //    inside the heart they are shifted and magnified, and the thick edge
+  //    shifts them the other way, so each bar breaks into soft steps as it
+  //    passes.
+  //    The glass itself is nearly clear: a soft rim, a bevel, a side wall,
+  //    gloss and a soft shadow. Its shading is baked once per burst into
+  //    sprites; the refraction is composited live.
+  const SPRITE = 520;                 // the heart's width in the sprites (px)
+  const SLANT = Math.PI / 4;          // the bars run down to the right
+  let heartUnder = null, heartFace = null, heartGlow = null, barsCanvas = null, barsCtx = null;
+
+  function bakeHeart() {
+    const k = SPRITE / 2;             // HEART is 2 units wide
+    const size = Math.round(SPRITE * 1.7);
+    const make = () => {
+      const cv = document.createElement("canvas");
+      cv.width = cv.height = size;
+      const g = cv.getContext("2d");
+      g.translate(size / 2, size / 2);
+      return [cv, g];
+    };
+    const fillHeart = (g, style, s = 1, dx = 0, dy = 0) => {
+      g.save();
+      g.translate(dx * k, dy * k);
+      g.scale(k * s, k * s);
+      g.fillStyle = style;
+      g.fill(HEART);
+      g.restore();
+    };
+    const strokeHeart = (g, style, width, s = 1) => {
+      g.save();
+      g.scale(k * s, k * s);
+      g.strokeStyle = style;
+      g.lineWidth = width / (k * s);
+      g.lineJoin = "round";
+      g.stroke(HEART);
+      g.restore();
+    };
+    const diagonal = (g, stops) => {
+      const d = g.createLinearGradient(-k, -k, k, k);
+      for (const [at, color] of stops) d.addColorStop(at, color);
+      return d;
+    };
+
+    // Under the face: a soft shadow on the backdrop, and the glass's side
+    // wall showing below and to the right (its thickness)
+    const [under, ug] = make();
+    ug.filter = `blur(${Math.round(k * 0.09)}px)`;
+    fillHeart(ug, "rgba(36, 12, 104, 0.4)", 1, 0.08, 0.13);
+    ug.filter = "none";
+    fillHeart(ug, diagonal(ug, [[0, "rgba(150, 110, 255, 0.5)"], [1, "rgba(84, 44, 196, 0.62)"]]), 1, 0.035, 0.06);
+
+    // The face: almost clear, milkier toward the edge, with a bevel lit from
+    // the upper left and shaded toward the lower right, a fine rim and gloss
+    const [face, fg] = make();
+    const body = fg.createRadialGradient(-0.1 * k, -0.08 * k, 0, 0, 0, 1.05 * k);
+    body.addColorStop(0, "rgba(238, 228, 255, 0.05)");
+    body.addColorStop(0.7, "rgba(232, 218, 255, 0.1)");
+    body.addColorStop(1, "rgba(232, 218, 255, 0.26)");
+    fillHeart(fg, body);
+    fg.globalCompositeOperation = "source-atop";
+    fg.filter = `blur(${Math.round(k * 0.035)}px)`;
+    strokeHeart(fg, diagonal(fg, [[0, "rgba(255, 255, 255, 0.7)"], [0.5, "rgba(255, 255, 255, 0.12)"], [1, "rgba(255, 255, 255, 0.3)"]]), k * 0.15);
+    strokeHeart(fg, diagonal(fg, [[0, "rgba(60, 24, 150, 0)"], [0.55, "rgba(60, 24, 150, 0)"], [1, "rgba(60, 24, 150, 0.35)"]]), k * 0.09, 0.93);
+    // gloss: a broad soft sheen and a crisp glint on the left lobe, a
+    // catch-light along the right lobe
+    fg.fillStyle = "rgba(255, 255, 255, 0.5)";
+    fg.beginPath();
+    fg.ellipse(-0.45 * k, -0.43 * k, 0.27 * k, 0.12 * k, -0.62, 0, Math.PI * 2);
+    fg.fill();
+    fg.filter = `blur(${Math.max(1, Math.round(k * 0.008))}px)`;
+    fg.fillStyle = "rgba(255, 255, 255, 0.95)";
+    fg.beginPath();
+    fg.ellipse(-0.52 * k, -0.5 * k, 0.085 * k, 0.035 * k, -0.62, 0, Math.PI * 2);
+    fg.fill();
+    fg.strokeStyle = "rgba(255, 255, 255, 0.6)";
+    fg.lineWidth = k * 0.025;
+    fg.lineCap = "round";
+    fg.beginPath();
+    fg.arc(0.42 * k, -0.36 * k, 0.3 * k, -Math.PI * 0.35, Math.PI * 0.05);
+    fg.stroke();
+    fg.globalCompositeOperation = "source-over";
+    fg.filter = "none";
+    strokeHeart(fg, diagonal(fg, [[0, "rgba(255, 255, 255, 0.95)"], [0.5, "rgba(255, 255, 255, 0.4)"], [1, "rgba(255, 255, 255, 0.6)"]]), k * 0.012);
+
+    // The glow as it pops in
+    const [glow, gg] = make();
+    gg.filter = `blur(${Math.round(k * 0.16)}px)`;
+    fillHeart(gg, "rgba(180, 140, 255, 0.9)", 1.05);
+
+    heartUnder = under;
+    heartFace = face;
+    heartGlow = glow;
+  }
+
+  // The heart's size (half its width, px), visibility and glow at time t:
+  // it pops in as the comet lands, beats twice while the bars glide through,
+  // then grows a little and fades
+  function heartAt(t) {
+    if (t < 0.88 || t > END) return null;
+    const pop = easeOutBack((t - 0.88) / 0.32);
+    const beat = 0.05 * hump(1.3, 1.44, t) + 0.065 * hump(1.5, 1.66, t);
+    const leave = ramp(GLASS.leave, END, t);
+    const float = 1 + 0.012 * Math.sin(t * 2.4);
+    return {
+      size: R * GLASS.size * pop * (1 + beat) * float * (1 + 0.35 * leave),
+      a: clamp01((t - 0.88) / 0.08) * (1 - leave),
+      glow: 0.6 * (1 - ramp(1.0, 1.7, t)) + 3 * beat,
+    };
+  }
+
+  // A glossy lilac bar: a rounded tube, lit along its upper edge
+  function bar(g, x0, y0, x1, y1, w, a) {
+    const nx = -Math.sin(SLANT), ny = Math.cos(SLANT);
+    g.lineCap = "round";
+    // its shade underneath, offset down-left
+    g.strokeStyle = rgb([70, 34, 176], 0.45 * a);
+    g.lineWidth = w;
+    g.beginPath();
+    g.moveTo(x0 + nx * w * 0.22, y0 + ny * w * 0.22);
+    g.lineTo(x1 + nx * w * 0.22, y1 + ny * w * 0.22);
+    g.stroke();
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+    const s = g.createLinearGradient(mx - nx * w / 2, my - ny * w / 2, mx + nx * w / 2, my + ny * w / 2);
+    s.addColorStop(0, rgb([246, 232, 255], 0.95 * a));
+    s.addColorStop(0.3, rgb([214, 170, 255], 0.95 * a));
+    s.addColorStop(0.75, rgb([176, 120, 250], 0.95 * a));
+    s.addColorStop(1, rgb([142, 92, 236], 0.95 * a));
+    g.strokeStyle = s;
+    g.beginPath();
+    g.moveTo(x0, y0);
+    g.lineTo(x1, y1);
+    g.stroke();
+  }
+
+  // The bars: they glide in from the upper left, ease through the heart,
+  // and glide out to the lower right, a beat apart
+  function drawBars(g, t, size) {
+    g.clearRect(0, 0, W, H);
+    const dx = Math.cos(SLANT), dy = Math.sin(SLANT);
+    const nx = -dy, ny = dx;
+    const w = size * 0.16;
+    for (const b2 of bars) {
+      const q = (t - b2.t0) / b2.dur;
+      if (q <= 0 || q >= 1) continue;
+      // in (fast, settling), drift, out (gathering speed)
+      const run = q < 0.35 ? -far * 1.3 * (1 - easeOut(q / 0.35))
+                : q < 0.68 ? (q - 0.35) * size * 0.6
+                : (0.33 * size * 0.6) + far * 1.3 * easeIn((q - 0.68) / 0.32);
+      const ox = c.x + nx * b2.lane * size + dx * run, oy = c.y + ny * b2.lane * size + dy * run;
+      const L = b2.len * size;
+      bar(g, ox - dx * L / 2, oy - dy * L / 2, ox + dx * L / 2, oy + dy * L / 2, w * b2.w, 1);
+    }
+  }
+
+  function drawGlassHeart(t) {
+    const h = heartAt(t);
+    if (!h || h.a <= 0 || !heartFace) return;
+    const size = h.size;
+    const scale = size / (SPRITE / 2);
+    const sw = heartFace.width * scale;
+    drawBars(barsCtx, t, R * GLASS.size);
+
+    ctx.save();
+    ctx.globalAlpha = h.a;
+    // the glow as it pops in and beats
+    if (h.glow > 0.01) {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = h.a * h.glow;
+      ctx.drawImage(heartGlow, c.x - sw / 2, c.y - sw / 2, sw, sw);
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = h.a;
+    }
+    // the bars on the backdrop, then the glass's shadow and side wall
+    ctx.drawImage(barsCanvas, 0, 0);
+    ctx.drawImage(heartUnder, c.x - sw / 2, c.y - sw / 2, sw, sw);
+
+    // Refraction: inside the face, the bars shifted across their run and
+    // magnified; in the thick edge, shifted the other way and magnified more
+    const nx = -Math.sin(SLANT), ny = Math.cos(SLANT);
+    const outer = new DOMMatrix().translate(c.x, c.y).scale(size, size);
+    const inner = new DOMMatrix().translate(c.x, c.y).scale(size * 0.84, size * 0.84);
+    const innerP = new Path2D();
+    innerP.addPath(HEART, inner);
+    const edgeP = new Path2D();
+    edgeP.addPath(HEART, outer);
+    edgeP.addPath(HEART, inner);
+    for (const [path, rule, shift, mag] of [[innerP, "nonzero", 0.2, 1.08], [edgeP, "evenodd", -0.3, 1.18]]) {
+      ctx.save();
+      ctx.clip(path, rule);
+      ctx.clearRect(0, 0, W, H);
+      drawHaze(t);
+      ctx.translate(c.x + nx * shift * size, c.y + ny * shift * size);
+      ctx.scale(mag, mag);
+      ctx.translate(-c.x, -c.y);
+      ctx.drawImage(barsCanvas, 0, 0);
+      ctx.restore();
+    }
+    // the face: nearly clear glass, bevel, rim and gloss
+    ctx.drawImage(heartFace, c.x - sw / 2, c.y - sw / 2, sw, sw);
+    ctx.restore();
+  }
+
+  // 7. The purple the heart sits in: a smooth, glossy violet spreading from
+  //    the middle across the whole window as the heart pops in, lighter
+  //    behind the heart, then clearing
+  function drawHaze(t) {
+    if (t < WAVE.start || t > END) return;
+    const out = 1 - ramp(WAVE.clear, END, t);
+    const reach = R * 1.2 + (far * 1.1 - R * 1.2) * ramp(WAVE.start, WAVE.full, t);
+    const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, reach);
+    g.addColorStop(0, rgb([170, 128, 255], 0.72 * out));
+    g.addColorStop(0.5, rgb([128, 82, 248], 0.7 * out));
+    g.addColorStop(0.88, rgb([98, 56, 222], 0.66 * out));
+    g.addColorStop(1, rgb([98, 56, 222], 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function frame(now) {
+    const t = held ?? (now - start) / 1000;
+    setLove(t);
+    back.clearRect(0, 0, W, H);
+    front.clearRect(0, 0, W, H);
+    if (t > END) {
+      for (const cv of canvas) cv.style.display = "none";
+      if (t > LOVE_OUT[1]) { window.__mtLove = 0; anim = null; return; }
+      anim = requestAnimationFrame(frame);
+      return;
+    }
+    if (t > LOVE_OUT[0] && document.documentElement.hasAttribute("data-mt-love")) {
+      document.documentElement.removeAttribute("data-mt-love");
+      document.documentElement.setAttribute("data-mt-love-out", "");
+      setTimeout(() => !window.__mtLove && document.documentElement.removeAttribute("data-mt-love-out"), 3000);
+    }
+    for (const cx of [back, front]) {
+      cx.save();
+      cx.beginPath();
+      cx.rect(clip.x, clip.y, clip.w, clip.h);
+      cx.clip();
+    }
+    ctx = back;
+    drawSky(t);
+    drawRays(t);
+    drawBloom(t);
+    ctx = front;
+    back.restore();
+    front.restore();
+    ctx = back;     // light only, so the small heart stays visible through it
+    drawCharge(t);
+    ctx = front;
+    drawComet(t);
+    // these reach over the whole window
+    drawHaze(t);
+    drawGlassHeart(t);
+    anim = requestAnimationFrame(frame);
+  }
+
+  function play() {
+    if (!canvas) {
+      canvas = ["mt-love", "mt-love-front"].map((id) => {
+        const cv = document.createElement("canvas");
+        cv.id = id;
+        return cv;
+      });
+      back = canvas[0].getContext("2d");
+      front = canvas[1].getContext("2d");
+    }
+    for (const cv of canvas) {
+      if (cv.parentElement !== document.body) document.body.append(cv);
+      cv.style.display = "";
+    }
+    layout();
+    scatter();
+    if (!heartFace) bakeHeart();
+    if (!barsCanvas) barsCtx = (barsCanvas = document.createElement("canvas")).getContext("2d");
+    barsCanvas.width = W;
+    barsCanvas.height = H;
+    const root = document.documentElement;
+    root.removeAttribute("data-mt-love-out");
+    root.setAttribute("data-mt-love", "");
+    // The small glass heart: swells, glows hot pink and charges (user.css).
+    // The class goes on the theme's own .mt-gh, because liking makes Spotify
+    // rewrite the button's classes.
+    const heart = document.querySelector(".mt-like > .mt-gh");
+    if (heart) {
+      heart.classList.remove("mt-gh-love");
+      void heart.offsetWidth;
+      heart.classList.add("mt-gh-love");
+      clearTimeout(play.timer);
+      play.timer = setTimeout(() => heart.classList.remove("mt-gh-love"), 2400);
+    }
+    start = performance.now();
+    if (!anim) anim = requestAnimationFrame(frame);
+  }
+  // For checking it: PyaarLove.hold(1.2) freezes the burst at 1.2 s,
+  // PyaarLove.hold(null) lets it run on
+  window.PyaarLove = {
+    play,
+    hold(t) { if (t != null && !anim) play(); held = t; if (t == null) start = performance.now(); },
+  };
+
+  // Switched off for now: liking only turns the heart pink glass. Set to true
+  // to play the burst on each like again (PyaarLove.play() still works).
+  const PLAY_ON_LIKE = false;
+
+  // Capture phase: read the button's state before Spotify flips it, so the
+  // burst only plays when liking (not when removing a like)
+  document.addEventListener("click", (e) => {
+    if (!PLAY_ON_LIKE) return;
+    const button = e.target.closest?.(".mt-like");
+    if (button && button.getAttribute("aria-checked") === "false") play();
+  }, true);
+})();
