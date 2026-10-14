@@ -1,4 +1,4 @@
-# Pyaar
+# Pyaar, Made with Love <3
 
 **Glass and light, colored by every song.**
 
@@ -16,6 +16,10 @@ Pyaar is a soft, moving theme for [Spicetify](https://spicetify.app). Every colo
 - **Glass heart:** the like button is a thick glass heart that bends the light behind it. It glides and catches a glare when you hover it, and turns pink glass when you like a song.
 - **Glass pages:** home and playlist pages sit in frosted glass boxes.
 - **Music sync (optional):** the library's light follows the song's tempo, bass, build-ups and drops.
+
+
+-**Developer note: This is a Personal Project. I plan on adding more features. Making it more prettier. I found other themes to either too dull or goes too overboard, Ultimately I've made this with love.
+
 
 ## Installing
 
