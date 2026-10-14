@@ -666,17 +666,43 @@
     };
   }
 
+  // Spotify has no analysis for many songs now ("analysis not found"), but its
+  // audio features (tempo, meter, energy, loudness) are there for nearly all of
+  // them. Lay an even beat grid at that tempo from the start of the song, so the
+  // light still moves in time with it: softer, since the exact beat positions
+  // aren't known, and with no build-ups or drops to read.
+  function approximate(id, f, duration) {
+    let bpm = f.tempo;
+    while (bpm > 165) bpm /= 2;
+    while (bpm < 60) bpm *= 2;
+    const gap = 60 / bpm, meter = f.time_signature >= 3 ? f.time_signature : 4;
+    const hits = [];
+    for (let i = 0; i * gap < duration; i++) hits.push({ t: i * gap, s: i % meter === 0 ? 0.7 : 0.45 });
+    const level = clamp01(f.energy ?? 0.5);
+    return {
+      id, bpm, hits, shine: [], approx: true, beatGap: gap,
+      segs: [{ t: 0, level, l0: level, tp: 0, attack: 0, dark: 0.5 }],
+      sections: [{ t: 0, db: f.loudness ?? -8 }],
+    };
+  }
+
   let track = null, loadingId = null, retryAt = 0;
   async function load(id) {
     loadingId = id;
     track = null;
     try {
       const token = Spicetify.Platform.AuthorizationAPI.getState().token.accessToken;
-      const r = await fetch(
-        `https://spclient.wg.spotify.com/audio-attributes/v1/audio-analysis/${id}?format=json`,
-        { headers: { Authorization: "Bearer " + token } });
-      if (!r.ok) throw new Error("analysis " + r.status);
-      const t = prepare(id, await r.json());
+      const auth = { headers: { Authorization: "Bearer " + token } };
+      const base = "https://spclient.wg.spotify.com/audio-attributes/v1/";
+      const r = await fetch(`${base}audio-analysis/${id}?format=json`, auth);
+      let t;
+      if (r.ok) t = prepare(id, await r.json());
+      else if (r.status === 404) {
+        const f = await fetch(`${base}audio-features/${id}`, auth).then((res) => (res.ok ? res.json() : null));
+        const duration = (Spicetify.Player.getDuration?.() || 0) / 1000;
+        if (f?.tempo > 0 && duration > 0) t = approximate(id, f, duration);
+      }
+      if (!t) throw new Error("no analysis " + r.status);
       if (loadingId === id) track = t;
     } catch {
       // No analysis (local files, podcasts, very new releases) or the request
@@ -738,7 +764,7 @@
       const pos = player.getProgress() / 1000;
 
       // Bass: each hit fades well before the next beat, so the bass punches
-      sync.pulse = envelope(t.hits, pos, Math.min(0.3, 0.42 * t.beatGap), 0.07) * k;
+      sync.pulse = envelope(t.hits, pos, Math.min(0.3, 0.42 * t.beatGap), t.approx ? 0.12 : 0.07) * k;
       // Bright sounds: quick glints
       sync.shimmer = envelope(t.shine, pos, 0.09, 0.03) * k;
 
