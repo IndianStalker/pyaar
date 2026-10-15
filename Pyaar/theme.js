@@ -207,6 +207,13 @@
 // slow CSS loops below, both shaders and the progress bar all follow it.
 window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
 
+// Pyaar: the light motion preset (the lights button beside Marketplace):
+// "full" moves everything; "balanced" is lighter for older PCs (the center
+// light at half resolution and 15fps, the library light and glass loops at
+// 30 and 15fps); "still" stops all motion: each light is drawn once and
+// only redrawn when the song's colors or the window change.
+window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
+
 // Pyaar: the slow glass loops (the controls' float, morph and swirl, the
 // home pearl, the banner's turning cube, the search bar's idle shimmer) are
 // CSS animations, which the browser restyles and re-blurs 60 times a second.
@@ -247,6 +254,11 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
       scan();
       lastScan = now;
     }
+    // Still: they hold where they are (still paused, so they never fall back
+    // to running natively). Balanced: every other beat (15fps).
+    const mode = window.__mtMode();
+    if (mode === "still") { lastTick = now; return; }
+    if (mode === "balanced" && b % 2) return;
     const dt = lastTick ? Math.min(100, now - lastTick) : 0;
     lastTick = now;
     for (const [a, t] of clock) {
@@ -549,13 +561,18 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
 (function settings() {
   const KEY = "pyaar:settings";
   // Music sync and the center light's tempo start off; they are turned on in
-  // Pyaar Settings. The library light runs at 60fps unless set to 30.
-  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false, libraryFps: 60 };
+  // Pyaar Settings. The lights start in Full motion (the lights button).
+  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false, lightMode: "full" };
   const state = { ...DEFAULTS };
+  let saved = {};
   try {
     // (settings saved before the theme was named Pyaar carry over)
-    Object.assign(state, JSON.parse(localStorage.getItem(KEY) || localStorage.getItem("mytheme:settings") || "{}"));
+    saved = JSON.parse(localStorage.getItem(KEY) || localStorage.getItem("mytheme:settings") || "{}") || {};
   } catch {}
+  Object.assign(state, saved);
+  // The old "Library light: 30 fps" choice became the Balanced preset
+  if (saved.libraryFps === 30 && !saved.lightMode) state.lightMode = "balanced";
+  delete state.libraryFps;
   const listeners = new Set();
 
   const S = (window.PyaarSettings = {
@@ -569,7 +586,7 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
   });
 
   const LEVELS = [["subtle", "Subtle"], ["normal", "Normal"], ["strong", "Strong"]];
-  const FPS_OPTIONS = [[30, "30 fps"], [60, "60 fps"]];
+  const MODES = [["full", "Full"], ["balanced", "Balanced"], ["still", "Still"]];
 
   // The account menu gets one "Pyaar Settings" row (with the glass heart),
   // added each time the menu opens and built from Spotify's own rows so it
@@ -753,13 +770,8 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
       style);
     // Kept current while the window is open (a new song, sync turned on)
     const styleTimer = setInterval(style.refresh, 1000);
-    const visuals = el("section", "mt-set-group");
-    visuals.append(el("h3", "mt-set-group-title", "Visuals"),
-      segRow("Library light", "Smoother at 60 fps, lighter at 30", "libraryFps", FPS_OPTIONS),
-      switchRow("Center light", "The moving light behind the center", "centerLight"),
-      switchRow("Follow the tempo", "The center light speeds up and slows down with the song's tempo", "lightTempo", "centerLight"));
 
-    panel.append(head, music, visuals);
+    panel.append(head, music);
     backdrop.append(panel);
     document.body.append(backdrop);
     requestAnimationFrame(() => backdrop.classList.add("mt-open"));
@@ -778,6 +790,71 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     open = backdrop;
   }
   S.open = openSettings;
+
+  // The lights menu: a button beside Marketplace in the top bar opens a
+  // small glass card with the motion preset and the center light's switches,
+  // so anyone whose PC struggles can calm or stop the lights in one click
+  const LIGHT_ICON = '<svg viewBox="4 2 18 18" width="22" height="22" aria-hidden="true" fill="currentColor">'
+    + '<path d="M12 3c.5 4.2 2.6 6.4 6.8 7-4.2.6-6.3 2.8-6.8 7-.5-4.2-2.6-6.4-6.8-7 4.2-.6 6.3-2.8 6.8-7z"/>'
+    + '<path d="M18.5 14.5c.2 1.6 1 2.4 2.5 2.6-1.5.2-2.3 1-2.5 2.6-.2-1.6-1-2.4-2.5-2.6 1.5-.2 2.3-1 2.5-2.6z" opacity=".7"/></svg>';
+  let pop = null;
+  function closeLights() {
+    if (!pop) return;
+    const layer = pop;
+    pop = null;
+    layer.classList.remove("mt-open");
+    document.querySelector("[data-mt-lights]")?.setAttribute("aria-expanded", "false");
+    setTimeout(() => layer.remove(), 300);
+  }
+  function openLights(button) {
+    if (pop) return closeLights();
+    const layer = el("div", "mt-pop-layer");
+    const card = el("div", "mt-settings mt-pop");
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-label", "Pyaar lights");
+    const r = button.getBoundingClientRect();
+    card.style.left = Math.max(12, r.left) + "px";
+    card.style.top = r.bottom + 8 + "px";
+    const group = el("section", "mt-set-group");
+    group.append(el("h3", "mt-set-group-title", "Lights"),
+      segRow("Motion", "Balanced and Still are lighter on older PCs", "lightMode", MODES),
+      switchRow("Center light", "The moving light behind the center", "centerLight"),
+      switchRow("Follow the tempo", "The center light speeds up and slows down with the song's tempo", "lightTempo", "centerLight"));
+    card.append(group);
+    layer.append(card);
+    document.body.append(layer);
+    button.setAttribute("aria-expanded", "true");
+    requestAnimationFrame(() => layer.classList.add("mt-open"));
+    pop = layer;
+  }
+  // Closes on a click outside it or on Escape
+  document.addEventListener("pointerdown", (e) => {
+    if (pop && !e.target.closest?.(".mt-pop, [data-mt-lights]")) closeLights();
+  }, true);
+  document.addEventListener("keydown", (e) => e.key === "Escape" && closeLights(), true);
+
+  // The button, styled like Marketplace's own, placed just after it (or after
+  // the back and forward buttons without Marketplace). Spotify may re-render
+  // the top bar, so it's put back when it goes missing.
+  function addLightsButton() {
+    const nav = document.getElementById("global-nav-bar");
+    if (!nav || nav.querySelector("[data-mt-lights]")) return;
+    const after = nav.querySelector(".custom-navlinks-scrollable_container") || nav.querySelector("button")?.parentElement;
+    if (!after) return;
+    const sample = nav.querySelector("button.custom-navlink") || nav.querySelector("button");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = (sample?.className || "").replace(/\bcustom-navlink\b/, "").trim();
+    button.classList.add("mt-lights-button");
+    button.dataset.mtLights = "";
+    button.setAttribute("aria-label", "Pyaar lights");
+    button.setAttribute("aria-expanded", "false");
+    button.title = "Pyaar lights";
+    button.innerHTML = LIGHT_ICON;
+    button.addEventListener("click", () => openLights(button));
+    after.after(button);
+  }
+  setInterval(() => document.hidden || addLightsButton(), 1000);
 })();
 
 // Pyaar: music sync. The library ribbon moves with the song: it flows faster
@@ -1336,19 +1413,21 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     return host;
   }
 
-  let last = 0, beat = -1, clock = performance.now() / 1000;
+  let last = 0, beat = -1, drawn = "", clock = performance.now() / 1000;
   function frame(now) {
     requestAnimationFrame(frame);
-    // Every frame (60fps) by default, so the flow and its music-sync pulses
-    // stay extra smooth. Set to 30 in Pyaar Settings ("Library light"), it
-    // shares the 30fps beat with everything else (about 10% of a core less
-    // for the window, measured)
+    // Full: every frame (60fps), so the flow and its music-sync pulses stay
+    // extra smooth. Balanced: the shared 30fps beat (about 10% of a core
+    // less for the window, measured). Still: no motion, see below.
+    const mode = window.__mtMode();
+    const still = mode === "still";
     const b = window.__mtBeat(now);
-    if (b === beat && window.PyaarSettings?.get("libraryFps") === 30) return;
+    if (b === beat && mode !== "full") return;
     beat = b;
-    // Its own clock, so the music sync can speed the flow up and down smoothly
-    const sync = window.PyaarSync;
-    clock += Math.min(0.1, (now - last) / 1000) * (sync?.speed ?? 1);
+    // Its own clock, so the music sync can speed the flow up and down
+    // smoothly (held in Still, where the music doesn't move it either)
+    const sync = still ? null : window.PyaarSync;
+    if (!still) clock += Math.min(0.1, (now - last) / 1000) * (sync?.speed ?? 1);
     if (document.hidden) { last = now; return; }
     const host = attach();
     if (!host) return;
@@ -1362,12 +1441,23 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     // Ease toward the current song's colors
     const k = Math.min(1, (now - last) / 900);
     last = now;
-    for (const key in colors) colors[key] = colors[key].map((v, i) => v + (target[key][i] - v) * k);
+    let moving = 0;
+    for (const key in colors) {
+      colors[key] = colors[key].map((v, i) => {
+        moving = Math.max(moving, Math.abs(target[key][i] - v));
+        return v + (target[key][i] - v) * k;
+      });
+    }
+    // Still: the canvas keeps its last frame; redraw only while the colors
+    // cross-fade, or when the size, brightness or love burst changes
+    const love = window.__mtLove || 0;
+    const sig = `${w}x${h}|${energy.toFixed(3)}|${mode}`;
+    if (still && sig === drawn && moving < 0.002 && !love) return;
+    drawn = sig;
     gl.uniform2f(loc.res, w, h);
     gl.uniform1f(loc.t, clock);
     // Louder parts, each swell, build-ups and drops all lift its glow
     // The love burst (window.__mtLove) turns the ribbon hot pink for a moment
-    const love = window.__mtLove || 0;
     gl.uniform1f(loc.energy, energy + love * 0.8 + (sync
       ? sync.amount * (sync.energy - 0.5) * 0.7 + sync.breath * 0.3 + sync.build * 0.15 + sync.bloom * 0.3
       : 0));
@@ -1623,15 +1713,22 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     return true;
   }
 
-  let last = 0, lastDraw = 0, beat = -1, clock = performance.now() / 1000, host = null, shown = true;
+  let last = 0, lastDraw = 0, beat = -1, drawn = "", clock = performance.now() / 1000, host = null, shown = true;
   function frame(now) {
     requestAnimationFrame(frame);
-    // 30fps (FPS), on the shared beat with the library ribbon and glass loops
+    // 30fps (FPS), on the shared beat with the library ribbon and glass
+    // loops. Balanced: every other beat (15fps) at half resolution.
+    // Still: drawn once, then only when something changes (below).
     const b = window.__mtBeat(now);
     if (document.hidden || b === beat) return;
     beat = b;
+    const mode = window.__mtMode();
+    const still = mode === "still";
+    if (mode === "balanced" && b % 2) return;
+    const scale = mode === "balanced" ? 0.5 : SCALE;
     // Its own clock, so the song's tempo can speed it up and down smoothly
-    clock += Math.min(0.1, (now - lastDraw) / 1000) * BASE_SPEED * (window.PyaarSync?.tempo ?? 1);
+    // (held in Still)
+    if (!still) clock += Math.min(0.1, (now - lastDraw) / 1000) * BASE_SPEED * (window.PyaarSync?.tempo ?? 1);
     lastDraw = now;
     // Turned off in the Pyaar menu: the center stays pure black
     const on = window.PyaarSettings?.get("centerLight") !== false;
@@ -1640,8 +1737,8 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     if (!host?.isConnected) host = document.querySelector(".Root__top-container");
     if (!host) return;
     if (canvas.parentElement !== host) host.prepend(canvas);
-    const w = Math.max(2, Math.round(host.clientWidth * SCALE));
-    const h = Math.max(2, Math.round(host.clientHeight * SCALE));
+    const w = Math.max(2, Math.round(host.clientWidth * scale));
+    const h = Math.max(2, Math.round(host.clientHeight * scale));
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
@@ -1649,15 +1746,26 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     }
     const k = Math.min(1, (now - last) / 1200);
     last = now;
-    for (let i = 0; i < 36; i++) colors[i] += (target[i] - colors[i]) * k;
+    let moving = 0;
+    for (let i = 0; i < 36; i++) {
+      moving = Math.max(moving, Math.abs(target[i] - colors[i]));
+      colors[i] += (target[i] - colors[i]) * k;
+    }
+    // Still: the canvas keeps its last frame; redraw only while the colors
+    // cross-fade, or when the size, brightness, the library's edge or the
+    // love burst changes
+    const love = window.__mtLove || 0;
+    const edge = covered ? [covered.x0, covered.y0, covered.x1, covered.y1].map(Math.round).join(",") : "";
+    const sig = `${w}x${h}|${energy.toFixed(3)}|${edge}|${mode}`;
+    if (still && sig === drawn && moving < 0.002 && !love) return;
+    drawn = sig;
     const crease = frameUniforms(clock);
     gl.uniform2f(loc.res, w, h);
     // (in the shader's pixels, counted from the bottom)
-    if (covered) gl.uniform4f(loc.skip, covered.x0 * SCALE, h - covered.y1 * SCALE, covered.x1 * SCALE, h - covered.y0 * SCALE);
+    if (covered) gl.uniform4f(loc.skip, covered.x0 * scale, h - covered.y1 * scale, covered.x1 * scale, h - covered.y0 * scale);
     else gl.uniform4f(loc.skip, 0, 0, 0, 0);
     gl.uniform1f(loc.t, clock);
     // The love burst (window.__mtLove) turns the light hot pink and violet
-    const love = window.__mtLove || 0;
     for (let i = 0; i < 36; i++) loveMix[i] = colors[i] + (LOVE_R[i] - colors[i]) * love;
     gl.uniform1f(loc.energy, energy + love * 2.5);
     gl.uniform1f(loc.crease, crease);

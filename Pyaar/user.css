@@ -1973,6 +1973,39 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
   color: rgba(255, 255, 255, 0.5);
 }
 
+/* The lights menu: the settings card's glass, smaller, under its button */
+.mt-pop-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.mt-pop-layer .mt-pop {
+  position: absolute;
+  width: min(430px, calc(100vw - 24px));
+  padding: 14px 18px 6px;
+  border-radius: 20px;
+  pointer-events: auto;
+  transform-origin: 20px 0;
+  opacity: 0;
+  transition: scale 0.5s var(--glass-spring), translate 0.5s var(--glass-spring), opacity 0.25s ease;
+}
+
+.mt-pop-layer.mt-open .mt-pop {
+  scale: 1;
+  translate: 0 0;
+  opacity: 1;
+}
+
+.mt-lights-button svg {
+  display: block;
+}
+
+.mt-lights-button[aria-expanded="true"] {
+  color: var(--mt-art-light) !important;
+}
+
 /* Detected style: a quiet read-out in the same milky glass as the slider's
  * chosen option */
 .mt-set-value {
