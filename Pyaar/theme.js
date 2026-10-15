@@ -588,73 +588,6 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   const LEVELS = [["subtle", "Subtle"], ["normal", "Normal"], ["strong", "Strong"]];
   const MODES = [["full", "Full"], ["balanced", "Balanced"], ["still", "Still"]];
 
-  // The account menu gets one "Pyaar Settings" row (with the glass heart),
-  // added each time the menu opens and built from Spotify's own rows so it
-  // looks native, like Spicy Lyrics' row. Clicking it opens the settings
-  // window. (Spicetify's Menu API doesn't work on this Spotify version: its
-  // items never show, and its SubMenu breaks the whole account menu.)
-  function addMenuRow(list) {
-    if (list.querySelector("[data-mt-menu]")) return;
-    const sample = list.querySelector(':scope > li a[role="menuitem"][href^="/user/"]')?.closest("li");
-    const sampleItem = sample?.querySelector('[role="menuitem"]');
-    const sampleText = sample?.querySelector("span");
-    if (!sampleItem || !sampleText) return;
-
-    const li = document.createElement("li");
-    li.className = sample.className;
-    li.setAttribute("role", "presentation");
-    li.dataset.mtMenu = "";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = sampleItem.className;
-    button.setAttribute("role", "menuitem");
-    button.tabIndex = -1;
-    const row = (sampleItem.firstElementChild || sampleText).cloneNode(false);
-    row.classList.add("mt-menu-row");
-    const heart = document.createElement("span");
-    heart.className = "mt-menu-heart";
-    heart.append(window.PyaarGlassHeart?.(true) ?? "");
-    const name = sampleText.cloneNode(false);
-    name.textContent = "Pyaar Settings";
-    row.append(heart, name);
-    button.append(row);
-    li.append(button);
-    button.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      // Close the account menu (it closes on a press outside it; a
-      // synthetic Escape is ignored), then open the window
-      const o = { bubbles: true, cancelable: true, clientX: 0, clientY: 0, button: 0, pointerId: 1, pointerType: "mouse", isPrimary: true };
-      for (const [Type, name] of [[PointerEvent, "pointerdown"], [MouseEvent, "mousedown"], [PointerEvent, "pointerup"], [MouseEvent, "mouseup"]]) {
-        document.body.dispatchEvent(new Type(name, o));
-      }
-      openSettings();
-    });
-    list.children[0].after(li);
-  }
-
-  // Watch the account button; when its menu opens, add the row. Spotify may
-  // re-create the button, so re-attach when it changes.
-  const observer = new MutationObserver((records) => {
-    if (records[0].target.getAttribute("aria-expanded") !== "true") return;
-    let tries = 0;
-    (function find() {
-      const list = document.querySelector('[role="menuitem"][href^="/user/"]')?.closest("ul");
-      if (list) addMenuRow(list);
-      else if (tries++ < 30) requestAnimationFrame(find);
-    })();
-  });
-  let watched = null;
-  setInterval(() => {
-    if (document.hidden) return;
-    const button = document.querySelector('[data-testid="user-widget-link"]');
-    if (button && button !== watched) {
-      observer.disconnect();
-      observer.observe(button, { attributes: true, attributeFilter: ["aria-expanded"] });
-      watched = button;
-    }
-  }, 1000);
-
   // The settings window: frosted glass in the song's colors (user.css,
   // "Pyaar Settings window"). Grows into the full visual controls later.
   function el(tag, cls, text) {
@@ -759,7 +692,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     close.type = "button";
     close.setAttribute("aria-label", "Close");
     const heart = el("span", "mt-menu-heart mt-settings-heart");
-    heart.append(window.PyaarGlassHeart?.(true) ?? "");
+    heart.append(window.PyaarGlassHeart?.(true, true) ?? "");
     head.append(heart, el("h2", "mt-settings-title", "Pyaar Settings"), close);
 
     const music = el("section", "mt-set-group");
@@ -800,7 +733,9 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     const layer = pop;
     pop = null;
     layer.classList.remove("mt-open");
-    document.querySelector("[data-mt-lights]")?.setAttribute("aria-expanded", "false");
+    const button = document.querySelector("[data-mt-lights]");
+    button?.setAttribute("aria-expanded", "false");
+    button?.querySelector(".mt-gh")?.classList.remove("mt-gh-filled");
     setTimeout(() => layer.remove(), 300);
   }
   function openLights(button) {
@@ -828,6 +763,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     layer.append(card);
     document.body.append(layer);
     button.setAttribute("aria-expanded", "true");
+    button.querySelector(".mt-gh")?.classList.add("mt-gh-filled");
     requestAnimationFrame(() => layer.classList.add("mt-open"));
     pop = layer;
   }
@@ -837,8 +773,10 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   }, true);
   document.addEventListener("keydown", (e) => e.key === "Escape" && closeLights(), true);
 
-  // The button: the Pyaar glass heart (as on the Pyaar Settings row and
-  // window), styled like Marketplace's own button and placed just after it
+  // The button: the Pyaar heart in silver glass (the settings' own color, so
+  // it isn't mistaken for the like button's pink). Like the like button, it
+  // toggles: clear glass when closed, filled while its menu is open. Styled
+  // like Marketplace's own button and placed just after it
   // (or after the back and forward buttons without Marketplace). Spotify may
   // re-render the top bar, so it's put back when it goes missing.
   function addLightsButton() {
@@ -856,7 +794,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     button.setAttribute("aria-expanded", "false");
     button.title = "Pyaar";
     const heart = el("span", "mt-menu-heart mt-settings-heart");
-    heart.append(window.PyaarGlassHeart(true));
+    heart.append(window.PyaarGlassHeart(false, true));
     button.append(heart);
     button.addEventListener("click", () => openLights(button));
     after.after(button);
@@ -1972,17 +1910,19 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 
   // The same heart, filled with the song's colors, for Pyaar Settings (its
   // account menu row and window header)
-  window.PyaarGlassHeart = (filled) => {
+  window.PyaarGlassHeart = (filled, silver) => {
     addLensFilter();
     const heart = buildHeart();
     if (filled) heart.classList.add("mt-gh-filled");
+    if (silver) heart.classList.add("mt-gh-silver");
     return heart;
   };
 
-  // Hovering the heart's button (or its menu row / window header) plays the
-  // glide; once the pointer has left, the current pass finishes before it
-  // stops, so the heart never jumps back
-  const HOSTS = ".mt-like, [data-mt-menu], .mt-settings-head, [data-mt-lights]";
+  // Hovering the heart's button (the like button, the Pyaar button in the top
+  // bar, or the settings window's header) plays the glide; once the pointer
+  // has left, the current pass finishes before it stops, so the heart never
+  // jumps back
+  const HOSTS = ".mt-like, [data-mt-lights], .mt-settings-head";
   document.addEventListener("pointerover", (e) => {
     e.target.closest?.(HOSTS)?.querySelector(".mt-gh")?.classList.add("mt-gh-play");
   });

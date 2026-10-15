@@ -735,6 +735,31 @@ body :is(span, p, a, h1, h2, h3, h4, button, input, div, li, label) {
 .mt-like[aria-checked="true"] .mt-gh-band,
 .mt-gh-filled .mt-gh-band  { opacity: 0.9; }
 
+/* Pyaar's settings hearts: silver glass, so they read as settings and not
+ * as the like button. Clear when closed, filled while open (theme.js). */
+.mt-gh.mt-gh-silver {
+  --gh-f0: #f7f8fb;
+  --gh-f1: #b8bdc7;
+  --gh-f2: #626875;
+  --gh-b0: #ffffff;
+  --gh-b1: #c7ccd6;
+  --gh-b2: #8b919d;
+}
+
+.mt-gh-silver.mt-gh-filled .mt-gh-art {
+  filter: drop-shadow(0 0 2.5px rgb(225 230 240 / 0.45));
+}
+
+.mt-gh-silver.mt-gh-filled .mt-gh-fill {
+  filter: none;
+}
+
+/* Their hover, like the like button's: a little bigger, with the glide */
+[data-mt-lights]:hover .mt-gh,
+.mt-settings-head:hover .mt-gh {
+  scale: 1.1;
+}
+
 /* Hover: the reference's motion. The slab glides to the side and back;
  * on the way back a broad glare sweeps across it and the rim flares.
  * theme.js lets the current pass finish after the pointer leaves. */
@@ -1791,17 +1816,10 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
 }
 
 /* ------------------------------------------------------------------ */
-/* Pyaar Settings: a row in the account menu (with the theme's glass   */
-/* heart) that opens the settings window. Added by theme.js, settings. */
+/* Pyaar's own hearts (the top bar button and the settings window):    */
+/* the like button's glass heart (theme.js puts a .mt-gh in it; its    */
+/* 24 px heart is scaled to fit)                                       */
 /* ------------------------------------------------------------------ */
-.mt-menu-row {
-  display: flex !important;
-  align-items: center;
-  gap: 12px;
-}
-
-/* The like button's glass heart, filled with the song's colors (theme.js
- * puts a .mt-gh in it; its 24 px heart is scaled to fit) */
 .mt-menu-heart {
   position: relative;
   flex: none;
