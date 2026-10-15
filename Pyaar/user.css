@@ -1998,12 +1998,31 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
   opacity: 1;
 }
 
-.mt-lights-button svg {
+/* The Pyaar heart in the top bar: a little lift while its menu is open */
+.mt-lights-button .mt-settings-heart {
   display: block;
+  transition: scale 0.35s var(--glass-spring);
 }
 
-.mt-lights-button[aria-expanded="true"] {
-  color: var(--mt-art-light) !important;
+.mt-lights-button[aria-expanded="true"] .mt-settings-heart {
+  scale: 1.1;
+}
+
+/* "Pyaar Settings" at the bottom of the lights menu */
+.mt-set-link {
+  width: calc(100% + 28px);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mt-set-chevron {
+  font-size: 20px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 /* Detected style: a quiet read-out in the same milky glass as the slider's

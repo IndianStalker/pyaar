@@ -794,9 +794,6 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   // The lights menu: a button beside Marketplace in the top bar opens a
   // small glass card with the motion preset and the center light's switches,
   // so anyone whose PC struggles can calm or stop the lights in one click
-  const LIGHT_ICON = '<svg viewBox="4 2 18 18" width="22" height="22" aria-hidden="true" fill="currentColor">'
-    + '<path d="M12 3c.5 4.2 2.6 6.4 6.8 7-4.2.6-6.3 2.8-6.8 7-.5-4.2-2.6-6.4-6.8-7 4.2-.6 6.3-2.8 6.8-7z"/>'
-    + '<path d="M18.5 14.5c.2 1.6 1 2.4 2.5 2.6-1.5.2-2.3 1-2.5 2.6-.2-1.6-1-2.4-2.5-2.6 1.5-.2 2.3-1 2.5-2.6z" opacity=".7"/></svg>';
   let pop = null;
   function closeLights() {
     if (!pop) return;
@@ -820,7 +817,14 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
       segRow("Motion", "Balanced and Still are lighter on older PCs", "lightMode", MODES),
       switchRow("Center light", "The moving light behind the center", "centerLight"),
       switchRow("Follow the tempo", "The center light speeds up and slows down with the song's tempo", "lightTempo", "centerLight"));
-    card.append(group);
+    // The rest (music sync and its style) is in the full window
+    const more = el("button", "mt-set-row mt-set-link");
+    more.type = "button";
+    const moreText = el("div", "mt-set-text");
+    moreText.append(el("div", "mt-set-label", "Pyaar Settings"), el("div", "mt-set-hint", "Music sync and the song's style"));
+    more.append(moreText, el("span", "mt-set-chevron", "\u203A"));
+    more.addEventListener("click", () => { closeLights(); openSettings(); });
+    card.append(group, more);
     layer.append(card);
     document.body.append(layer);
     button.setAttribute("aria-expanded", "true");
@@ -833,12 +837,13 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   }, true);
   document.addEventListener("keydown", (e) => e.key === "Escape" && closeLights(), true);
 
-  // The button, styled like Marketplace's own, placed just after it (or after
-  // the back and forward buttons without Marketplace). Spotify may re-render
-  // the top bar, so it's put back when it goes missing.
+  // The button: the Pyaar glass heart (as on the Pyaar Settings row and
+  // window), styled like Marketplace's own button and placed just after it
+  // (or after the back and forward buttons without Marketplace). Spotify may
+  // re-render the top bar, so it's put back when it goes missing.
   function addLightsButton() {
     const nav = document.getElementById("global-nav-bar");
-    if (!nav || nav.querySelector("[data-mt-lights]")) return;
+    if (!nav || nav.querySelector("[data-mt-lights]") || !window.PyaarGlassHeart) return;
     const after = nav.querySelector(".custom-navlinks-scrollable_container") || nav.querySelector("button")?.parentElement;
     if (!after) return;
     const sample = nav.querySelector("button.custom-navlink") || nav.querySelector("button");
@@ -847,10 +852,12 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     button.className = (sample?.className || "").replace(/\bcustom-navlink\b/, "").trim();
     button.classList.add("mt-lights-button");
     button.dataset.mtLights = "";
-    button.setAttribute("aria-label", "Pyaar lights");
+    button.setAttribute("aria-label", "Pyaar");
     button.setAttribute("aria-expanded", "false");
-    button.title = "Pyaar lights";
-    button.innerHTML = LIGHT_ICON;
+    button.title = "Pyaar";
+    const heart = el("span", "mt-menu-heart mt-settings-heart");
+    heart.append(window.PyaarGlassHeart(true));
+    button.append(heart);
     button.addEventListener("click", () => openLights(button));
     after.after(button);
   }
@@ -1975,7 +1982,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   // Hovering the heart's button (or its menu row / window header) plays the
   // glide; once the pointer has left, the current pass finishes before it
   // stops, so the heart never jumps back
-  const HOSTS = ".mt-like, [data-mt-menu], .mt-settings-head";
+  const HOSTS = ".mt-like, [data-mt-menu], .mt-settings-head, [data-mt-lights]";
   document.addEventListener("pointerover", (e) => {
     e.target.closest?.(HOSTS)?.querySelector(".mt-gh")?.classList.add("mt-gh-play");
   });
