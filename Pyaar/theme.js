@@ -757,7 +757,7 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     visuals.append(el("h3", "mt-set-group-title", "Visuals"),
       segRow("Library light", "Smoother at 60 fps, lighter at 30", "libraryFps", FPS_OPTIONS),
       switchRow("Center light", "The moving light behind the center", "centerLight"),
-      switchRow("Follow the tempo", "The center light moves faster or slower with the song's BPM", "lightTempo", "centerLight"));
+      switchRow("Follow the tempo", "The center light speeds up and slows down with the song's tempo", "lightTempo", "centerLight"));
 
     panel.append(head, music, visuals);
     backdrop.append(panel);
@@ -808,7 +808,7 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
   const PLAIN = { pulse: 1, gate: 0, release: 0.3, rise: 0.07, ref: 110, lo: 0.7, hi: 1.6, surge: 0.3, shimmer: 1, breath: 1, build: 1, bloom: 1, bloomTau: 1.8 };
   const sync = (window.PyaarSync = {
     speed: 1,    // flow speed: from the tempo, plus a surge on each hit
-    tempo: 1,    // the center light's speed: the song's tempo alone (1 = calm), eased
+    tempo: 1,    // the center light's speed: the song's tempo at this moment (1 = calm), eased
     pulse: 0,    // bass hit envelope (0..1.5 with intensity)
     energy: 0.5, // how loud this part of the song is, 0..1
     shimmer: 0,  // bright transients (hi-hats, snares), quick
@@ -846,6 +846,16 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     let bpm = 60 / quantile(gaps, 0.5);
     while (bpm > 165) bpm /= 2;
     while (bpm < 60) bpm *= 2;
+
+    // The tempo moment to moment, for the center light: at each beat, the
+    // median of the 9 beat gaps around it (so one missed or extra beat
+    // doesn't move it), in the same octave as the song's tempo above, and
+    // kept within half to double of it
+    const octave = (bpm * quantile(gaps, 0.5)) / 60;
+    const tempos = beats.map((b, i) => {
+      const local = (60 / quantile(gaps.slice(Math.max(0, i - 4), i + 5), 0.5)) * octave;
+      return Math.min(2 * bpm, Math.max(0.5 * bpm, local));
+    });
 
     // Loudness normalized to this track, so quiet songs still react
     const loud = segments.map((s) => s.loudness_max);
@@ -909,7 +919,7 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     };
 
     return {
-      id, bpm, hits, segs, shine, stats,
+      id, bpm, hits, segs, shine, stats, tempos, grid,
       beatGap,
       sections: sections.map((s) => ({ t: s.start, db: s.loudness })),
     };
@@ -1111,8 +1121,12 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
 
     const playing = want && track && track.id === id && !player.data.isPaused ? track : null;
     const t = on ? playing : null;
-    // The center light's speed: the tempo alone (110 bpm is the calm default)
-    sync.tempo = ease(sync.tempo, tempoOn && playing ? Math.min(1.6, Math.max(0.7, playing.bpm / 110)) : 1, dt, 1.5);
+    // The center light's speed: the tempo alone (110 bpm is the calm
+    // default), as it is at this moment in the song, so it speeds up and
+    // slows down with it (songs without the analysis keep one tempo)
+    let bpmNow = playing?.bpm;
+    if (tempoOn && playing?.tempos) bpmNow = playing.tempos[Math.max(0, lastAt(playing.grid, player.getProgress() / 1000))];
+    sync.tempo = ease(sync.tempo, tempoOn && playing ? Math.min(1.6, Math.max(0.7, bpmNow / 110)) : 1, dt, 1.2);
     const k = LEVELS[settings?.get("syncIntensity")] ?? 1;
 
     if (t) {
