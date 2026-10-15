@@ -436,8 +436,8 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
 (function settings() {
   const KEY = "pyaar:settings";
   // Music sync and the center light's tempo start off; they are turned on in
-  // Pyaar Settings
-  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false };
+  // Pyaar Settings. The library light runs at 60fps unless set to 30.
+  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false, libraryFps: 60 };
   const state = { ...DEFAULTS };
   try {
     // (settings saved before the theme was named Pyaar carry over)
@@ -456,6 +456,7 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
   });
 
   const LEVELS = [["subtle", "Subtle"], ["normal", "Normal"], ["strong", "Strong"]];
+  const FPS_OPTIONS = [[30, "30 fps"], [60, "60 fps"]];
 
   // The account menu gets one "Pyaar Settings" row (with the glass heart),
   // added each time the menu opens and built from Spotify's own rows so it
@@ -553,30 +554,33 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     return row;
   }
 
-  function levelRow() {
+  // A segmented slider over `options` ([value, label] pairs); with `needs`,
+  // it dims while that other setting is off
+  function segRow(label, hint, key, options, needs) {
     const row = el("div", "mt-set-row mt-set-level");
     const text = el("div", "mt-set-text");
-    text.append(el("div", "mt-set-label", "Sync intensity"), el("div", "mt-set-hint", "How strongly the light moves with the music"));
+    text.append(el("div", "mt-set-label", label), el("div", "mt-set-hint", hint));
     const seg = el("div", "mt-seg");
     seg.setAttribute("role", "radiogroup");
-    seg.setAttribute("aria-label", "Sync intensity");
+    seg.setAttribute("aria-label", label);
+    seg.style.setProperty("--n", options.length);
     seg.append(el("span", "mt-seg-thumb"));
-    const buttons = LEVELS.map(([value, label], i) => {
-      const b = el("button", "mt-seg-option", label);
+    const buttons = options.map(([value, text]) => {
+      const b = el("button", "mt-seg-option", text);
       b.type = "button";
       b.setAttribute("role", "radio");
-      b.addEventListener("click", () => { S.set("syncIntensity", value); sync(); });
+      b.addEventListener("click", () => { S.set(key, value); sync(); });
       seg.append(b);
       return b;
     });
     const sync = () => {
-      const i = Math.max(0, LEVELS.findIndex(([v]) => v === S.get("syncIntensity")));
+      const i = Math.max(0, options.findIndex(([v]) => v === S.get(key)));
       seg.style.setProperty("--i", i);
       buttons.forEach((b, j) => b.setAttribute("aria-checked", String(i === j)));
-      row.classList.toggle("mt-set-off", !S.get("musicSync"));
+      if (needs) row.classList.toggle("mt-set-off", !S.get(needs));
     };
     sync();
-    S.on((key) => key === "musicSync" && sync());
+    if (needs) S.on((k) => k === needs && sync());
     row.append(text, seg);
     return row;
   }
@@ -601,9 +605,10 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     const music = el("section", "mt-set-group");
     music.append(el("h3", "mt-set-group-title", "Music"),
       switchRow("Music sync", "The library light follows the song's tempo and bass", "musicSync"),
-      levelRow());
+      segRow("Sync intensity", "How strongly the light moves with the music", "syncIntensity", LEVELS, "musicSync"));
     const visuals = el("section", "mt-set-group");
     visuals.append(el("h3", "mt-set-group-title", "Visuals"),
+      segRow("Library light", "Smoother at 60 fps, lighter at 30", "libraryFps", FPS_OPTIONS),
       switchRow("Center light", "The moving light behind the center", "centerLight"),
       switchRow("Follow the tempo", "The center light moves faster or slower with the song's BPM", "lightTempo", "centerLight"));
 
@@ -1034,12 +1039,16 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     return host;
   }
 
-  let last = 0, clock = performance.now() / 1000;
+  let last = 0, beat = -1, clock = performance.now() / 1000;
   function frame(now) {
     requestAnimationFrame(frame);
-    // Every frame (60fps), unlike the rest, which share the 30fps beat: the
-    // flow and its music-sync pulses are kept extra smooth (about +10% of a
-    // core for the window, measured)
+    // Every frame (60fps) by default, so the flow and its music-sync pulses
+    // stay extra smooth. Set to 30 in Pyaar Settings ("Library light"), it
+    // shares the 30fps beat with everything else (about 10% of a core less
+    // for the window, measured)
+    const b = window.__mtBeat(now);
+    if (b === beat && window.PyaarSettings?.get("libraryFps") === 30) return;
+    beat = b;
     // Its own clock, so the music sync can speed the flow up and down smoothly
     const sync = window.PyaarSync;
     clock += Math.min(0.1, (now - last) / 1000) * (sync?.speed ?? 1);
