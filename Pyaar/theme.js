@@ -1034,13 +1034,12 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     return host;
   }
 
-  let last = 0, beat = -1, clock = performance.now() / 1000;
+  let last = 0, clock = performance.now() / 1000;
   function frame(now) {
     requestAnimationFrame(frame);
-    // 30fps, on the same frames as the center light and the glass loops
-    const b = window.__mtBeat(now);
-    if (b === beat) return;
-    beat = b;
+    // Every frame (60fps), unlike the rest, which share the 30fps beat: the
+    // flow and its music-sync pulses are kept extra smooth (about +10% of a
+    // core for the window, measured)
     // Its own clock, so the music sync can speed the flow up and down smoothly
     const sync = window.PyaarSync;
     clock += Math.min(0.1, (now - last) / 1000) * (sync?.speed ?? 1);
