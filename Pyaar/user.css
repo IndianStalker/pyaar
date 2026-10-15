@@ -2016,6 +2016,15 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
   opacity: 1;
 }
 
+/* The top bar is the window's title bar (drag to move the window), and only
+ * elements marked no-drag take real clicks there. Marketplace's container
+ * is; the Pyaar button sits just after it, so it needs its own. Without it,
+ * the button only worked while another menu (the account menu) was open. */
+.mt-lights-button,
+.mt-pop-layer .mt-pop {
+  -webkit-app-region: no-drag;
+}
+
 /* The Pyaar heart in the top bar: a little lift while its menu is open */
 .mt-lights-button .mt-settings-heart {
   display: block;
