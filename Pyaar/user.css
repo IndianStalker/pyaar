@@ -843,27 +843,38 @@ html[data-mt-love-out] {
 /* sets <html data-mt-paused>; Spotify's own value is the fallback.    */
 /* ------------------------------------------------------------------ */
 
-/* Registered so the light's color cross-fades */
+/* Registered so the light's color resolves to one color */
 @property --mt-tl {
   syntax: "<color>";
   inherits: true;
   initial-value: #c9ced8;
 }
 
+/* 0 playing, 1 paused. The pause cross-fade transitions this number, not
+ * --mt-tl itself: --mt-tl changes with every move of the bar, which kept
+ * restarting its transition and restyling the bar 60 times a second. */
+@property --mt-pz {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
 [data-testid="playback-progressbar"] .progress-bar {
   --mt-at: var(--mt-pos, var(--progress-bar-transform));
   --progress-bar-height: 6px;
   --progress-bar-radius: 999px;
-  /* Playing: first cover color early on, third by the end */
-  --mt-tl: color-mix(in oklch, var(--mt-p1), var(--mt-p3) var(--mt-at));
+  /* Playing: first cover color early on, third by the end.
+   * Paused: the light shifts to the cover's other colors (second, fourth). */
+  --mt-tl: color-mix(in oklch,
+    color-mix(in oklch, var(--mt-p1), var(--mt-p3) var(--mt-at)),
+    color-mix(in oklch, var(--mt-p2), var(--mt-p4) var(--mt-at)) calc(var(--mt-pz) * 100%));
   height: 18px;
   overflow: visible !important;
-  transition: --mt-tl 0.9s ease;
+  transition: --mt-pz 0.9s ease;
 }
 
-/* Paused: the light shifts to the cover's other colors */
 html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
-  --mt-tl: color-mix(in oklch, var(--mt-p2), var(--mt-p4) var(--mt-at));
+  --mt-pz: 1;
 }
 
 /* The glass track, with soft colored light filling it up to the knob,

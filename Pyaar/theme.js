@@ -89,6 +89,62 @@
   });
 })();
 
+// Pyaar: everything that moves on its own redraws on the same 30fps beat
+// (window.__mtBeat), so the frames in between have nothing to repaint. The
+// slow CSS loops below, both shaders and the progress bar all follow it.
+window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
+
+// Pyaar: the slow glass loops (the controls' float, morph and swirl, the
+// home pearl, the banner's turning cube, the search bar's idle shimmer) are
+// CSS animations, which the browser restyles and re-blurs 60 times a second.
+// They move a fraction of a pixel per frame, so they're paused and stepped
+// here on the shared beat instead: same keyframes, same easing, same timing,
+// half the work. playbackRate is still honored (glassControls ramps it on
+// hover). Loops that only run on hover or focus are left to CSS.
+(function slowLoops() {
+  const SLOW = new Set([
+    "glass-float", "glass-morph", "glass-spin", "mt-home-float",
+    "cube-turn", "cube-glow", "cube-reflect",
+    "mt-glow-spin", "mt-glow-breathe",
+  ]);
+  const clock = new Map(); // animation -> its own current time
+  let beat = -1, lastTick = 0, lastScan = -1e9;
+
+  // Picks up loops as Spotify re-renders. Only writes in the loop below:
+  // reading an animation's state would force a style recalc for each one.
+  function scan() {
+    const seen = new Set();
+    for (const a of document.getAnimations()) {
+      if (!SLOW.has(a.animationName)) continue;
+      seen.add(a);
+      if (!clock.has(a)) {
+        clock.set(a, a.currentTime || 0);
+        a.pause();
+      }
+    }
+    for (const a of clock.keys()) if (!seen.has(a)) clock.delete(a);
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const b = window.__mtBeat(now);
+    if (b === beat) return;
+    beat = b;
+    if (now - lastScan > 1000) {
+      scan();
+      lastScan = now;
+    }
+    const dt = lastTick ? Math.min(100, now - lastTick) : 0;
+    lastTick = now;
+    for (const [a, t] of clock) {
+      const next = t + dt * a.playbackRate;
+      clock.set(a, next);
+      a.currentTime = next;
+    }
+  }
+  requestAnimationFrame(frame);
+})();
+
 // Pyaar: the glass player bar's light takes the current song's colors.
 // Exposes the cover as --mt-cover, its main colors as --mt-art-*, its
 // distinct colors as --mt-p1..--mt-p5, and an 8-stop rainbow of the whole
@@ -293,9 +349,12 @@
       setTimeout(waitForPlayer, 300);
       return;
     }
-    Spicetify.Player.addEventListener("songchange", () => check());
+    Spicetify.Player.addEventListener("songchange", () => document.hidden || check());
+    // Hidden, nothing is sampled; the current song's colors come in on return
+    document.addEventListener("visibilitychange", () => document.hidden || check());
     // Safety net for changes that don't fire an event (e.g. ads, queue edits)
     setInterval(() => {
+      if (document.hidden) return;
       const url = coverUrl();
       if (url && url !== current) apply(url);
     }, 3000);
@@ -324,8 +383,14 @@
   document.addEventListener("pointercancel", release);
 
   let last = "";
+  let lastPct = -1, width = 0, widthAt = -1e9, beat = -1;
   let wasPaused = null;
   function frame(now) {
+    requestAnimationFrame(frame);
+    // On the shared beat, unless the knob is being dragged
+    const b = window.__mtBeat(now);
+    if (b === beat && !dragging) return;
+    beat = b;
     const bar = document.querySelector(BAR);
     const player = window.Spicetify?.Player;
 
@@ -345,7 +410,15 @@
         const progress = player.getProgress?.();
         if (duration > 0 && progress >= 0) pct = Math.min(100, (progress / duration) * 100);
       }
+      if (now - widthAt > 1000) {
+        width = bar.offsetWidth || 0;
+        widthAt = now;
+      }
+      // A move under a quarter pixel isn't visible; skip the restyle for it
+      const step = width > 0 ? 25 / width : 0;
+      if (Number.isFinite(pct) && !dragging && Math.abs(pct - lastPct) < step) pct = NaN;
       if (Number.isFinite(pct)) {
+        lastPct = pct;
         const value = pct.toFixed(3) + "%";
         if (value !== last || bar.style.getPropertyValue("--mt-pos") !== value) {
           bar.style.setProperty("--mt-pos", value);
@@ -353,7 +426,6 @@
         }
       }
     }
-    requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 })();
@@ -443,6 +515,7 @@
   });
   let watched = null;
   setInterval(() => {
+    if (document.hidden) return;
     const button = document.querySelector('[data-testid="user-widget-link"]');
     if (button && button !== watched) {
       observer.disconnect();
@@ -961,9 +1034,13 @@
     return host;
   }
 
-  let last = 0, clock = performance.now() / 1000;
+  let last = 0, beat = -1, clock = performance.now() / 1000;
   function frame(now) {
     requestAnimationFrame(frame);
+    // 30fps, on the same frames as the center light and the glass loops
+    const b = window.__mtBeat(now);
+    if (b === beat) return;
+    beat = b;
     // Its own clock, so the music sync can speed the flow up and down smoothly
     const sync = window.PyaarSync;
     clock += Math.min(0.1, (now - last) / 1000) * (sync?.speed ?? 1);
@@ -1007,7 +1084,7 @@
     }
     document.documentElement.setAttribute("data-mt-flow", "");
     readTheme();
-    setInterval(readTheme, 500);
+    setInterval(() => document.hidden || readTheme(), 500);
     requestAnimationFrame(frame);
   }
   start();
@@ -1241,10 +1318,13 @@
     return true;
   }
 
-  let last = 0, lastDraw = 0, clock = performance.now() / 1000, host = null, shown = true;
+  let last = 0, lastDraw = 0, beat = -1, clock = performance.now() / 1000, host = null, shown = true;
   function frame(now) {
     requestAnimationFrame(frame);
-    if (document.hidden || now - lastDraw < 1000 / FPS - 2) return;
+    // 30fps (FPS), on the shared beat with the library ribbon and glass loops
+    const b = window.__mtBeat(now);
+    if (document.hidden || b === beat) return;
+    beat = b;
     // Its own clock, so the song's tempo can speed it up and down smoothly
     clock += Math.min(0.1, (now - lastDraw) / 1000) * BASE_SPEED * (window.PyaarSync?.tempo ?? 1);
     lastDraw = now;
@@ -1292,7 +1372,7 @@
     }
     document.documentElement.setAttribute("data-mt-silk", "");
     readTheme();
-    setInterval(readTheme, 500);
+    setInterval(() => document.hidden || readTheme(), 500);
     requestAnimationFrame(frame);
   }
   start();
@@ -1468,7 +1548,7 @@
     }
     markLikeButton();
   }
-  setInterval(watch, 700);
+  setInterval(() => document.hidden || watch(), 700);
 
   // The same heart, filled with the song's colors, for Pyaar Settings (its
   // account menu row and window header)
