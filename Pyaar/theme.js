@@ -1,3 +1,116 @@
+// Pyaar: Spotify 1.3.5 (October 2026) dropped most of its readable class
+// names (.Root__top-container, .main-nowPlayingBar-*, .player-controls__*,
+// .progress-bar, .x-progressBar-*, .main-globalNav-link-icon,
+// .main-yourLibraryX-header) and re-hashed others (the home tiles, their
+// grid, the home header wash and sticky header). The theme's CSS and code
+// still use the old names, so on the new layout this finds each element by
+// its data-testid or position and gives it its old class back: one class
+// each, so every rule keeps its specificity and the look is unchanged. On
+// older Spotify, where the classes exist, it does nothing.
+(function classShim() {
+  const tagged = new WeakMap(); // element -> the old classes it should carry
+  // Spotify rewrites an element's className when its state changes (the home
+  // button on each page change, for one): put the old class straight back
+  const guard = new MutationObserver((records) => {
+    for (const r of records) {
+      for (const cls of tagged.get(r.target) || []) {
+        if (!r.target.classList.contains(cls)) r.target.classList.add(cls);
+      }
+    }
+  });
+  function want(el, cls) {
+    if (!el) return;
+    let set = tagged.get(el);
+    if (!set) {
+      tagged.set(el, (set = new Set()));
+      guard.observe(el, { attributes: true, attributeFilter: ["class"] });
+    }
+    set.add(cls);
+    if (!el.classList.contains(cls)) el.classList.add(cls);
+  }
+
+  function scan() {
+    const nav = document.getElementById("global-nav-bar");
+    const top = nav?.parentElement;
+    want(top, "Root__top-container");
+
+    // The banner: its wrapper, the bar, and its right side (volume, queue)
+    const npb = document.querySelector('[data-testid="now-playing-bar"]');
+    want(npb, "main-nowPlayingBar-container");
+    if (npb?.parentElement && npb.parentElement !== top) want(npb.parentElement, "L5dM7nzQpMJtRkvZZBZL");
+    const bar = npb?.firstElementChild;
+    want(bar, "main-nowPlayingBar-nowPlayingBar");
+    if (bar?.children.length === 3) want(bar.children[2], "main-nowPlayingBar-right");
+
+    // Player controls: shuffle + previous on the left, next + repeat on the right
+    const controls = npb?.querySelector('[data-testid="general-controls"]');
+    want(controls, "player-controls__buttons");
+    const sides = controls ? [...controls.children].filter((c) => c.tagName === "DIV") : [];
+    if (sides.length === 2) {
+      want(sides[0], "player-controls__left");
+      want(sides[1], "player-controls__right");
+    }
+
+    // Progress and volume bars: background > slider areas (hover preview, then
+    // the fill) > the fill itself
+    for (const pb of npb?.querySelectorAll('[data-testid="progress-bar"]') || []) {
+      want(pb, "progress-bar");
+      const bg = pb.querySelector(':scope > [data-testid="progress-bar-background"]');
+      want(bg, "x-progressBar-progressBarBg");
+      const areas = bg ? [...bg.children].filter((c) => c.firstElementChild && !c.dataset.testid) : [];
+      for (const a of areas) want(a, "x-progressBar-sliderArea");
+      want(areas[areas.length - 1]?.firstElementChild, "x-progressBar-fillColor");
+    }
+
+    // Home: the button beside the search bar
+    const form = nav?.querySelector("form");
+    want(form?.parentElement?.parentElement?.querySelector(":scope > button"), "main-globalNav-link-icon");
+
+    // The library's header ("Your Library" in Doto)
+    want(document.querySelector("#Desktop_LeftSidebar_Id .YourLibraryX header"), "main-yourLibraryX-header");
+
+    // Home page: the shortcut tiles and their grid, the grey header wash and
+    // the sticky header's background
+    const home = document.querySelector('#main-view [data-testid="home-page"]');
+    if (home) {
+      const first = home.querySelector('[data-testid="shortcut-background"]')?.parentElement?.parentElement;
+      if (first && !first.classList.contains("Ut_wBpPPXvZ0dLV07qaf")) {
+        for (const b of home.querySelectorAll('[data-testid="shortcut-background"]')) {
+          const tile = b.parentElement?.parentElement;
+          want(tile, "Ut_wBpPPXvZ0dLV07qaf");
+          want(tile?.parentElement, "_8jwKm1Yri1YCL_lRTb0");
+        }
+      }
+      for (const c of home.parentElement?.children || []) {
+        if (c === home) continue;
+        const style = c.getAttribute("style") || "";
+        if (!c.firstElementChild && /background/.test(style)) want(c, "_ddPhxHdxmpT13IbjTmr");
+        const layer = c.firstElementChild;
+        if (c.children.length === 2 && layer && !layer.firstElementChild && /opacity/.test(layer.getAttribute("style") || "")) {
+          want(layer, "mkLf3oHSpzyF02_8URcp");
+        }
+      }
+    }
+  }
+
+  // Once the player is on screen: if the old names are there, this is an
+  // older Spotify and nothing is needed. Otherwise tag now, and again (once
+  // per frame at most, before it paints) whenever Spotify re-renders.
+  let pending = false;
+  const later = () => {
+    if (pending || document.hidden) return;
+    pending = true;
+    requestAnimationFrame(() => { pending = false; scan(); });
+  };
+  (function start() {
+    if (!document.querySelector('[data-testid="now-playing-bar"]')) return setTimeout(start, 200);
+    if (document.querySelector(".player-controls__buttons, .main-nowPlayingBar-container")) return;
+    scan();
+    new MutationObserver(later).observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("visibilitychange", later);
+  })();
+})();
+
 // Pyaar: smoothly speeds up the glass blob swirl while a control is hovered.
 // The animations themselves live in user.css; this only eases their playback rate,
 // so the motion never jumps when the pointer enters or leaves.
