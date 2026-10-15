@@ -1973,6 +1973,28 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
   color: rgba(255, 255, 255, 0.5);
 }
 
+/* Detected style: a quiet read-out in the same milky glass as the slider's
+ * chosen option */
+.mt-set-value {
+  flex: none;
+  padding: 7px 14px;
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--mt-art-light) 40%, transparent),
+      color-mix(in srgb, var(--mt-art) 30%, transparent));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 8px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.mt-set-style {
+  pointer-events: none;
+}
+
 /* Intensity dims while music sync is off */
 .mt-set-row.mt-set-off {
   opacity: 0.4;

@@ -698,6 +698,36 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     return row;
   }
 
+  // The playing song's motion style, as music sync detected it (read live
+  // from PyaarSync.style while the window is open)
+  function styleRow() {
+    const row = el("div", "mt-set-row mt-set-style");
+    const text = el("div", "mt-set-text");
+    const hint = el("div", "mt-set-hint");
+    text.append(el("div", "mt-set-label", "Detected style"), hint);
+    const value = el("div", "mt-set-value");
+    row.append(text, value);
+    const sync = () => {
+      const on = !!S.get("musicSync");
+      const st = window.PyaarSync?.style;
+      row.classList.toggle("mt-set-off", !on);
+      if (!on) {
+        value.textContent = "Off";
+        hint.textContent = "Turn on Music sync to detect the song's style";
+      } else if (!st) {
+        value.textContent = "Listening";
+        hint.textContent = "How the library light moves for this song";
+      } else {
+        value.textContent = st.label;
+        hint.textContent = (st.share >= 0.8 ? "How the library light moves for this song" : `Mostly ${st.label}, a little ${st.second}`)
+          + (st.from === "features" ? " (no beat map for this song)" : "");
+      }
+    };
+    sync();
+    row.refresh = sync;
+    return row;
+  }
+
   let open = null;
   function openSettings() {
     if (open) return;
@@ -716,9 +746,13 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     head.append(heart, el("h2", "mt-settings-title", "Pyaar Settings"), close);
 
     const music = el("section", "mt-set-group");
+    const style = styleRow();
     music.append(el("h3", "mt-set-group-title", "Music"),
       switchRow("Music sync", "The library light follows the song's tempo and bass", "musicSync"),
-      segRow("Sync intensity", "How strongly the light moves with the music", "syncIntensity", LEVELS, "musicSync"));
+      segRow("Sync intensity", "How strongly the light moves with the music", "syncIntensity", LEVELS, "musicSync"),
+      style);
+    // Kept current while the window is open (a new song, sync turned on)
+    const styleTimer = setInterval(style.refresh, 1000);
     const visuals = el("section", "mt-set-group");
     visuals.append(el("h3", "mt-set-group-title", "Visuals"),
       segRow("Library light", "Smoother at 60 fps, lighter at 30", "libraryFps", FPS_OPTIONS),
@@ -732,6 +766,7 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
 
     const onKey = (e) => e.key === "Escape" && dismiss();
     function dismiss() {
+      clearInterval(styleTimer);
       backdrop.classList.remove("mt-open");
       document.removeEventListener("keydown", onKey, true);
       setTimeout(() => backdrop.remove(), 350);
@@ -768,6 +803,9 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
 // paused, or without analysis, everything settles back to the calm default.
 (function musicSync() {
   const LEVELS = { subtle: 0.55, normal: 1, strong: 1.5 };
+  // The motion when nothing is known about the song's style (its features
+  // couldn't be read): the light's original settings
+  const PLAIN = { pulse: 1, gate: 0, release: 0.3, rise: 0.07, ref: 110, lo: 0.7, hi: 1.6, surge: 0.3, shimmer: 1, breath: 1, build: 1, bloom: 1, bloomTau: 1.8 };
   const sync = (window.PyaarSync = {
     speed: 1,    // flow speed: from the tempo, plus a surge on each hit
     tempo: 1,    // the center light's speed: the song's tempo alone (1 = calm), eased
@@ -778,6 +816,7 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     build: 0,    // rising before a louder section, 0..1
     bloom: 0,    // a louder section just landed, fading over ~2 s
     amount: 0,   // how much the energy shapes the light (0 when inactive)
+    style: null, // the playing song's motion style (styleOf), or null
   });
   const settings = window.PyaarSettings;
 
@@ -850,9 +889,28 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     const top = quantile(raw.map((h) => h.s), 0.9) || 1;
     const hits = raw.map((h) => ({ t: h.t, s: clamp01(h.s / top) ** 1.6 })).filter((h) => h.s > 0.08);
 
+    // Two measurements for the style (styleOf): how steady the beat is
+    // (Spotify's confidence in each beat), and how many of the strong hits
+    // land between the beats (high in hip-hop and reggaeton, low in dance)
+    const beatGap = quantile(gaps, 0.5);
+    const grid = beats.map((b) => ({ t: b.start }));
+    const strong = quantile(segs.map((g) => g.attack), 0.7);
+    let offbeat = 0, counted = 0;
+    for (const g of segs) {
+      if (g.attack < strong) continue;
+      const i = Math.max(0, lastAt(grid, g.tp));
+      const frac = ((g.tp - grid[i].t) / beatGap) % 1;
+      counted++;
+      if ((frac > 0.15 && frac < 0.35) || (frac > 0.65 && frac < 0.85)) offbeat++;
+    }
+    const stats = {
+      clarity: quantile(beats.map((b) => b.confidence ?? 0.5), 0.5),
+      offbeat: counted ? offbeat / counted : 0,
+    };
+
     return {
-      id, bpm, hits, segs, shine,
-      beatGap: quantile(gaps, 0.5),
+      id, bpm, hits, segs, shine, stats,
+      beatGap,
       sections: sections.map((s) => ({ t: s.start, db: s.loudness })),
     };
   }
@@ -877,6 +935,91 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     };
   }
 
+  // Motion styles. Spotify gives no genre, so each song's style is inferred
+  // from its audio features (danceability, energy, acousticness, speech,
+  // tempo), its language and label (Indian and Latin music), and, when the
+  // analysis is there, how steady and busy its beat is. Each style sets how
+  // the library light moves: how strong the beat pulses are and which hits
+  // get through (gate: the share of the song's weakest hits left out, so 0
+  // pulses on every beat and 0.55 only on the accents and bar starts), how
+  // fast they fade (release, seconds) and how early
+  // they rise (rise), how tempo becomes speed (bpm / ref, clamped lo..hi),
+  // how much each hit surges the flow, and how much it glints, breathes,
+  // builds and blooms. The top two styles are blended, so a song between two
+  // styles moves between them.
+  const STYLES = {
+    dance:     { label: "Dance",          pulse: 1.0,  gate: 0,    release: 0.24, rise: 0.07, ref: 122, lo: 0.8,  hi: 1.5,  surge: 0.3,  shimmer: 0.8,  breath: 1.0, build: 1.0, bloom: 1.0, bloomTau: 2.2 },
+    hiphop:    { label: "Hip-hop / trap", pulse: 0.95, gate: 0.5,  release: 0.38, rise: 0.1,  ref: 140, lo: 0.75, hi: 1.05, surge: 0,    shimmer: 0.3,  breath: 1.2, build: 0.5, bloom: 0.8, bloomTau: 1.8 },
+    rock:      { label: "Rock / pop",     pulse: 0.85, gate: 0.3,  release: 0.32, rise: 0.09, ref: 120, lo: 0.85, hi: 1.4,  surge: 0.2,  shimmer: 0.7,  breath: 1.0, build: 0.6, bloom: 0.8, bloomTau: 2.0 },
+    indian:    { label: "Indian film",    pulse: 0.85, gate: 0.55, release: 0.28, rise: 0.1,  ref: 110, lo: 0.85, hi: 1.4,  surge: 0.15, shimmer: 0.2,  breath: 1.1, build: 0.7, bloom: 0.9, bloomTau: 2.0 },
+    latin:     { label: "Latin",          pulse: 0.9,  gate: 0.35, release: 0.26, rise: 0.08, ref: 95,  lo: 0.85, hi: 1.35, surge: 0.2,  shimmer: 0.5,  breath: 1.0, build: 0.7, bloom: 0.9, bloomTau: 2.0 },
+    ballad:    { label: "Ballad",         pulse: 0.2,  gate: 0.75, release: 0.5,  rise: 0.25, ref: 999, lo: 0.95, hi: 0.95, surge: 0,    shimmer: 0.3,  breath: 1.7, build: 0.5, bloom: 0.8, bloomTau: 2.5 },
+    classical: { label: "Classical / ambient", pulse: 0, gate: 1,  release: 0.6,  rise: 0.3,  ref: 999, lo: 0.85, hi: 0.85, surge: 0,    shimmer: 0.25, breath: 1.7, build: 0.5, bloom: 0.9, bloomTau: 3.0 },
+    speech:    { label: "Spoken",         pulse: 0,    gate: 1,    release: 0.6,  rise: 0.2,  ref: 999, lo: 0.8,  hi: 0.8,  surge: 0,    shimmer: 0,    breath: 1.2, build: 0,   bloom: 0,   bloomTau: 2.0 },
+  };
+  const INDIAN_LANGS = /^(hi|pa|ur|ta|te|ml|kn|bn|gu|mr|or|as|bho|raj|ne|si)$/;
+  const INDIAN_LABELS = /t-series|yrf|yash raj|saregama|zee music|tips (industries|music)|times music|speed records|white hill|venus|aditya music|lahari|think music|sony music (entertainment )?india|desi melodies/i;
+  const fold = (bpm) => {
+    while (bpm > 165) bpm /= 2;
+    while (bpm < 60) bpm *= 2;
+    return bpm;
+  };
+
+  // How well the song fits each style (higher fits better). f: audio
+  // features; meta: { lang, label, year }; stats: from the analysis, or null
+  function styleScores(f, meta, stats) {
+    const raw = f.tempo > 0 ? f.tempo : 110;
+    const t = fold(raw);
+    const indian = INDIAN_LANGS.test(meta.lang || "") || INDIAN_LABELS.test(meta.label || "");
+    const latin = /^(es|pt)$/.test(meta.lang || "");
+    const steady = stats ? stats.clarity : 0.6;
+    const offbeat = stats ? stats.offbeat : 0.15;
+    const rap = Math.min(0.35, Math.max(0, f.speechiness - 0.08));
+    return {
+      speech: 3 * (f.speechiness - 0.62),
+      classical: 1.6 * f.instrumentalness + 1.2 * f.acousticness - 1.6 * f.energy - 0.5
+        - 1.5 * Math.max(0, f.energy - 0.45) + (t < 100 ? 0.2 : 0) + (stats && steady < 0.35 ? 0.6 : 0),
+      ballad: f.acousticness - 1.4 * (f.energy - 0.45) - Math.max(0, f.danceability - 0.6) - 0.35
+        + (t < 105 ? 0.3 : 0) + (stats && steady < 0.5 ? 0.3 : 0) - 1.5 * Math.max(0, f.speechiness - 0.12),
+      // A steady four-on-the-floor: danceable, energetic, electronic, with
+      // few hits between the beats and no rapping (fast styles like
+      // hardcore count by their real tempo)
+      dance: 1.4 * (f.danceability - 0.5) + (f.energy - 0.55) - 0.8 * f.acousticness
+        + ((t >= 115 && t <= 150) || (raw >= 150 && raw <= 185) ? 0.4 : 0) + 0.5 * f.instrumentalness * f.energy
+        + (stats ? 0.8 * (steady - 0.6) - 1.2 * Math.max(0, offbeat - 0.2) : 0)
+        - 2 * Math.max(0, f.speechiness - 0.12) - (indian || latin ? 0.3 : 0),
+      // Rapping, and strong hits between the beats
+      hiphop: 3 * rap + 0.4 * (f.energy - 0.5) - 0.5 * f.acousticness - 0.1
+        + (stats && offbeat > 0.27 ? 0.35 : 0) + (t <= 100 && f.speechiness > 0.1 ? 0.15 : 0) - (indian ? 0.4 : 0),
+      rock: 1.2 * (f.energy - 0.5) + 0.3 * (f.danceability - 0.45) - 0.7 * f.acousticness - 0.4 * f.instrumentalness
+        - Math.max(0, f.speechiness - 0.15) + (t >= 95 ? 0.15 : 0) - (indian || latin ? 0.3 : 0)
+        + (stats ? 0.4 * (0.6 - steady) : 0),
+      indian: (indian ? 1.1 : -1) + 0.8 * (f.energy - 0.5) + 0.5 * (f.danceability - 0.5)
+        + (stats && offbeat > 0.3 ? 0.2 : 0),
+      latin: (latin ? 1.0 : -1) + 0.7 * (f.danceability - 0.55) + 0.4 * (f.energy - 0.5)
+        + (t >= 85 && t <= 105 ? 0.3 : 0),
+    };
+  }
+
+  // The style: the top two blended (by a soft max of their scores), the
+  // blended settings, and a short description for Pyaar Settings
+  function styleOf(f, meta, stats) {
+    const scores = styleScores(f, meta, stats);
+    const [a, b] = Object.entries(scores).sort((x, y) => y[1] - x[1]);
+    const wa = 1 / (1 + Math.exp((b[1] - a[1]) / 0.35));
+    const p = {};
+    for (const key of Object.keys(PLAIN)) p[key] = STYLES[a[0]][key] * wa + STYLES[b[0]][key] * (1 - wa);
+    return { name: a[0], label: STYLES[a[0]].label, second: STYLES[b[0]].label, share: wa, p, scores, from: stats ? "analysis" : "features" };
+  }
+
+  // base62 track id to the 32-hex id the metadata service uses
+  function gid(id) {
+    const A = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let n = 0n;
+    for (const c of id) n = n * 62n + BigInt(A.indexOf(c));
+    return n.toString(16).padStart(32, "0");
+  }
+
   let track = null, loadingId = null, retryAt = 0;
   async function load(id) {
     loadingId = id;
@@ -885,15 +1028,34 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
       const token = Spicetify.Platform.AuthorizationAPI.getState().token.accessToken;
       const auth = { headers: { Authorization: "Bearer " + token } };
       const base = "https://spclient.wg.spotify.com/audio-attributes/v1/";
-      const r = await fetch(`${base}audio-analysis/${id}?format=json`, auth);
+      const json = (res) => (res.ok ? res.json() : null);
+      const [r, f, m] = await Promise.all([
+        fetch(`${base}audio-analysis/${id}?format=json`, auth),
+        fetch(`${base}audio-features/${id}`, auth).then(json).catch(() => null),
+        fetch(`https://spclient.wg.spotify.com/metadata/4/track/${gid(id)}?market=from_token`,
+          { headers: { ...auth.headers, Accept: "application/json" } }).then(json).catch(() => null),
+      ]);
       let t;
       if (r.ok) t = prepare(id, await r.json());
       else if (r.status === 404) {
-        const f = await fetch(`${base}audio-features/${id}`, auth).then((res) => (res.ok ? res.json() : null));
         const duration = (Spicetify.Player.getDuration?.() || 0) / 1000;
         if (f?.tempo > 0 && duration > 0) t = approximate(id, f, duration);
       }
       if (!t) throw new Error("no analysis " + r.status);
+      // The song's style shapes the motion. Its gate leaves out the song's
+      // weaker hits (measured against this song's own hits), for the styles
+      // that shouldn't thump on every beat; the hits that stay are rescaled
+      // so the strongest still land fully.
+      const meta = { lang: m?.language_of_performance?.[0], label: m?.album?.label, year: m?.album?.date?.year };
+      t.style = f ? styleOf(f, meta, t.stats || null) : null;
+      const share = t.style?.p.gate || 0;
+      if (share >= 0.99) t.hits = [];
+      else if (share > 0 && t.hits.length) {
+        const floor = quantile(t.hits.map((h) => h.s), share);
+        t.hits = t.hits
+          .map((h) => ({ t: h.t, s: clamp01((h.s - floor) / Math.max(0.05, 1 - floor)) }))
+          .filter((h) => h.s > 0.02);
+      }
       if (loadingId === id) track = t;
     } catch {
       // No analysis (local files, podcasts, very new releases) or the request
@@ -926,7 +1088,9 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     const end = next ? next.t : g.tp + 0.5;
     return g.level + ((next ? next.l0 : g.level) - g.level) * clamp01((pos - g.tp) / Math.max(0.01, end - g.tp));
   }
-  let lastSection = -1;
+  // For testing the styles on any song's features
+  sync.styleOf = (f, meta, stats) => styleOf(f, meta || {}, stats || null);
+  let lastSection = -1, P = PLAIN;
 
   function frame(now) {
     requestAnimationFrame(frame);
@@ -954,10 +1118,13 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
     if (t) {
       const pos = player.getProgress() / 1000;
 
+      // This song's style (PLAIN if its features couldn't be read)
+      P = t.style?.p || PLAIN;
+
       // Bass: each hit fades well before the next beat, so the bass punches
-      sync.pulse = envelope(t.hits, pos, Math.min(0.3, 0.42 * t.beatGap), t.approx ? 0.12 : 0.07) * k;
+      sync.pulse = envelope(t.hits, pos, Math.min(P.release, 0.55 * t.beatGap), t.approx ? 0.12 : P.rise) * k * P.pulse;
       // Bright sounds: quick glints
-      sync.shimmer = envelope(t.shine, pos, 0.09, 0.03) * k;
+      sync.shimmer = envelope(t.shine, pos, 0.09, 0.03) * k * P.shimmer;
 
       // Build-ups and drops: is a clearly louder section coming?
       const si = lastAt(t.sections, pos);
@@ -976,15 +1143,16 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
       // Energy: how loud this part is (the same loudness curve, eased slowly)
       energy = ease(energy, loud, dt, 0.7);
 
-      // Speed: the tempo (110 bpm is the calm default), a little faster when loud
-      baseSpeed = ease(baseSpeed, Math.min(1.6, Math.max(0.7, t.bpm / 110)) * (0.88 + 0.24 * energy), dt, 1.5);
+      // Speed: the tempo against the style's own calm tempo, a little faster
+      // when loud (ballads and classical keep an even pace)
+      baseSpeed = ease(baseSpeed, Math.min(P.hi, Math.max(P.lo, t.bpm / P.ref)) * (0.88 + 0.24 * energy), dt, 1.5);
 
       // Sections: count steps forward (a seek just re-syncs)
       const section = lastAt(t.sections, pos);
       if (section === lastSection + 1 && section > 0) {
         // A louder section just landed: bloom
         const jump = clamp01((t.sections[section].db - t.sections[section - 1].db - 2) / 6);
-        bloom = Math.max(bloom, jump);
+        bloom = Math.max(bloom, jump * P.bloom);
       }
       lastSection = section;
     } else {
@@ -995,14 +1163,16 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
       build = ease(build, 0, dt, 0.5);
       baseSpeed = ease(baseSpeed, 1, dt, 1.5);
     }
-    bloom *= Math.exp(-dt / 1.8);
+    bloom *= Math.exp(-dt / P.bloomTau);
     sync.energy = energy;
     sync.amount = ease(sync.amount, t ? k : 0, dt, 0.8);
     // each swell and fade, measured against this part's own loudness
-    sync.breath = sync.amount * (loud - energy);
-    sync.build = build * k;
+    sync.breath = sync.amount * (loud - energy) * P.breath;
+    sync.build = build * k * P.build;
     sync.bloom = bloom * k;
-    sync.speed = baseSpeed + 0.3 * sync.pulse + 0.6 * sync.build + 0.35 * sync.bloom;
+    sync.speed = baseSpeed + P.surge * sync.pulse + 0.6 * sync.build + 0.35 * sync.bloom;
+    // For the readout in Pyaar Settings: the playing song's style, once known
+    sync.style = track && track.id === id ? track.style || null : null;
   }
   requestAnimationFrame(frame);
 })();
