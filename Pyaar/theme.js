@@ -209,9 +209,10 @@ window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
 
 // Pyaar: the light motion preset (the lights button beside Marketplace):
 // "full" moves everything; "balanced" is lighter for older PCs (the center
-// light at half resolution and 15fps, the library light and glass loops at
-// 30 and 15fps); "still" stops all motion: each light is drawn once and
-// only redrawn when the song's colors or the window change.
+// light at half resolution, still at 30fps since it's always moving and 15
+// looked laggy; the library light and glass loops at 30 and 15fps); "still"
+// stops all motion: each light is drawn once and only redrawn when the
+// song's colors or the window change.
 window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 
 // Pyaar: the slow glass loops (the controls' float, morph and swirl, the
@@ -1662,14 +1663,13 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   function frame(now) {
     requestAnimationFrame(frame);
     // 30fps (FPS), on the shared beat with the library ribbon and glass
-    // loops. Balanced: every other beat (15fps) at half resolution.
+    // loops. Balanced: half resolution (15fps was tried and looked laggy).
     // Still: drawn once, then only when something changes (below).
     const b = window.__mtBeat(now);
     if (document.hidden || b === beat) return;
     beat = b;
     const mode = window.__mtMode();
     const still = mode === "still";
-    if (mode === "balanced" && b % 2) return;
     const scale = mode === "balanced" ? 0.5 : SCALE;
     // Its own clock, so the song's tempo can speed it up and down smoothly
     // (held in Still)
