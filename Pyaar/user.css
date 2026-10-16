@@ -340,10 +340,25 @@ html:not([data-mt-flow]) #Desktop_LeftSidebar_Id {
   background: transparent !important;
 }
 
+/* The library glass levels (lights menu, html[data-mt-glass]): clearer
+ * glass blurs and tints the library light less, so the music shows more.
+ * Frosted is the original. */
+html[data-mt-glass="soft"] #Desktop_LeftSidebar_Id > nav > div {
+  --mt-slab-blur: 12px;
+  --mt-slab-tint: 16%;
+  --mt-slab-shade: 0.07;
+}
+
+html[data-mt-glass="clear"] #Desktop_LeftSidebar_Id > nav > div {
+  --mt-slab-blur: 4px;
+  --mt-slab-tint: 10%;
+  --mt-slab-shade: 0.04;
+}
+
 /* The glass slab */
 #Desktop_LeftSidebar_Id > nav > div {
   --mt-lib-dark: var(--mt-art-dark);
-  transition: --mt-lib-dark var(--mt-fade) ease;
+  transition: --mt-lib-dark var(--mt-fade) ease, backdrop-filter 0.8s ease;
   height: 100%;
   border-radius: 20px 20px 0 0 !important;
   background:
@@ -353,10 +368,10 @@ html:not([data-mt-flow]) #Desktop_LeftSidebar_Id {
     radial-gradient(90% 40% at 20% 0%, rgba(255, 255, 255, 0.09), transparent 70%),
     linear-gradient(155deg, rgba(255, 255, 255, 0.06), transparent 40%),
     /* The glass body: slightly smoky so text stays readable, warmed by the song */
-    color-mix(in srgb, var(--mt-lib-dark) 22%, rgba(0, 0, 0, 0.1)) !important;
+    color-mix(in srgb, var(--mt-lib-dark) var(--mt-slab-tint, 22%), rgba(0, 0, 0, var(--mt-slab-shade, 0.1))) !important;
   /* Frosting: heavy blur, lifted and slightly flattened like light
    * scattering inside the glass */
-  backdrop-filter: blur(22px) saturate(1.25) brightness(1.05);
+  backdrop-filter: blur(var(--mt-slab-blur, 22px)) saturate(1.25) brightness(1.05);
   box-shadow:
     /* Light catching the rim: brightest on top, then the lit left side */
     inset 0 1px 0 rgba(255, 255, 255, 0.5),
@@ -2188,9 +2203,9 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
 /* ------------------------------------------------------------------ */
 /* The library dissolves into its light when idle (theme.js,          */
 /* libraryVeil): a pane of thick glass slowly comes forward over the  */
-/* panel, frosting and bending the text at its rim as the text melts  */
-/* away, then recedes, leaving only the light. theme.js eases its     */
-/* presence (opacity), frost (--veil-blur) and bend (#mt-veil-lens).  */
+/* panel, frosting and gently bending the text at its rim as the text */
+/* melts away, then recedes, leaving only the light. A crossfade:     */
+/* only opacity and a slight scale move, so the GPU keeps it smooth.  */
 /* ------------------------------------------------------------------ */
 .mt-veil {
   position: absolute;
@@ -2200,8 +2215,9 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
   pointer-events: none;
   visibility: hidden;
   opacity: 0;
-  backdrop-filter: blur(var(--veil-blur, 0px)) saturate(1.12) brightness(1.05);
-  backdrop-filter: url(#mt-veil-lens) blur(var(--veil-blur, 0px)) saturate(1.12) brightness(1.05);
+  transform: scale(0.985);
+  backdrop-filter: blur(10px) saturate(1.12) brightness(1.05);
+  backdrop-filter: url(#mt-veil-lens) blur(10px) saturate(1.12) brightness(1.05);
   /* Monochrome glass with a soft, luminous glow (the user's style prompt:
    * minimal, smooth gradients, soft lighting, glossy glass; no shadows or
    * harsh contrast) */
@@ -2216,6 +2232,10 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
     /* light caught inside the thick glass */
     inset 0 0 40px rgba(255, 255, 255, 0.09),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  /* a gentle sine ease, so it starts and settles softly */
+  transition:
+    opacity 3.4s cubic-bezier(0.37, 0, 0.63, 1),
+    transform 3.4s cubic-bezier(0.37, 0, 0.63, 1);
 }
 
 /* A faint bright rim, like the slab's edge in the reference */
@@ -2233,3 +2253,20 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
   -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
 }
+
+/* The panel's contents melt away under the glass, and form again */
+#Desktop_LeftSidebar_Id > nav > div > * {
+  transition: opacity 3s cubic-bezier(0.37, 0, 0.63, 1);
+}
+
+#Desktop_LeftSidebar_Id.mt-veil-on > .mt-veil { visibility: visible; }
+#Desktop_LeftSidebar_Id.mt-veil-glass > .mt-veil { opacity: 1; transform: scale(1); }
+#Desktop_LeftSidebar_Id.mt-veil-gone > nav > div > * { opacity: 0; }
+/* Receding is slower still, so the light comes through gently */
+#Desktop_LeftSidebar_Id.mt-veil-recede > .mt-veil { transition-duration: 4.2s, 4.2s; }
+#Desktop_LeftSidebar_Id.mt-veil-rest > .mt-veil { visibility: hidden; }
+
+/* Coming back: the same moves, quicker */
+#Desktop_LeftSidebar_Id.mt-veil-back > .mt-veil { transition-duration: 1s, 1s; }
+#Desktop_LeftSidebar_Id.mt-veil-back.mt-veil-recede > .mt-veil { transition-duration: 1.8s, 1.8s; }
+#Desktop_LeftSidebar_Id.mt-veil-back > nav > div > * { transition-duration: 1.4s; }

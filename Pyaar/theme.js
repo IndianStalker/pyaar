@@ -563,7 +563,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   const KEY = "pyaar:settings";
   // Music sync and the center light's tempo start off; they are turned on in
   // Pyaar Settings. The lights start in Full motion (the lights button).
-  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false, lightMode: "full", libraryVeil: true };
+  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false, lightMode: "full", libraryVeil: true, libraryGlass: "frosted" };
   const state = { ...DEFAULTS };
   let saved = {};
   try {
@@ -588,6 +588,13 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 
   const LEVELS = [["subtle", "Subtle"], ["normal", "Normal"], ["strong", "Strong"]];
   const MODES = [["full", "Full"], ["balanced", "Balanced"], ["still", "Still"]];
+  const GLASS = [["clear", "Clear"], ["soft", "Soft"], ["frosted", "Frosted"]];
+
+  // The library's glass (lights menu): how much the slab over the library
+  // light blurs and tints it. user.css reads html[data-mt-glass].
+  const applyGlass = () => { document.documentElement.dataset.mtGlass = state.libraryGlass || "frosted"; };
+  applyGlass();
+  S.on((key) => key === "libraryGlass" && applyGlass());
 
   // The settings window: frosted glass in the song's colors (user.css,
   // "Pyaar Settings window"). Grows into the full visual controls later.
@@ -753,6 +760,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
       segRow("Motion", "Balanced and Still are lighter on older PCs", "lightMode", MODES),
       switchRow("Center light", "The moving light behind the center", "centerLight"),
       switchRow("Follow the tempo", "The center light speeds up and slows down with the song's tempo", "lightTempo", "centerLight"),
+      segRow("Library glass", "Clearer glass shows more of the music light", "libraryGlass", GLASS),
       switchRow("Clear library when idle", "After 10 s without the mouse, the library's text dissolves into its light", "libraryVeil"));
     // The rest (music sync and its style) is in the full window
     const more = el("button", "mt-set-row mt-set-link");
@@ -1937,27 +1945,25 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 // Pyaar: the library dissolves into its light when you leave Spotify alone.
 // After 10 s with no mouse, wheel or key input anywhere in Spotify, a pane
 // of thick glass slowly comes forward over the library: it frosts the text
-// and bends it at its rim (as the glass heart bends the banner, and like
-// the reference slab), the text melts away under it, and then the glass
-// recedes, leaving only the library light and its music. Any input brings
-// the text back the same way, just quicker: the glass comes forward, the
-// text forms under it, the glass recedes and the text is sharp again.
-// Nothing sweeps or snaps; every part eases in and out. Switched in the
-// lights menu ("Clear library when idle"). Only the transitions cost
-// anything; while cleared, the list isn't drawn.
+// and gently bends it at its rim (as the glass heart bends the banner, and
+// like the reference slab), the text melts away under it, and then the
+// glass recedes, leaving only the library light and its music. Any input
+// brings the text back the same way, a little quicker. It's a crossfade:
+// only opacity and a slight scale move (the GPU eases them on its own, so
+// it stays smooth however busy the page is), and the stages overlap so it
+// never snaps. Switched in the lights menu ("Clear library when idle").
+// Only the transitions cost anything; while cleared, the list isn't drawn.
 (function libraryVeil() {
   const IDLE_MS = 10000;
   const NS = "http://www.w3.org/2000/svg";
   const RIM = 60;     // how far in from the panel's edge the glass bends the view
-  const FROST = 12;   // px of blur at full glass
-  const BEND = 34;    // displacement at full glass (gentle: the text softens and shifts, never warps)
-  let last = performance.now(), veiled = false, mapKey = "";
-  let g = 0, x = 1;   // how far the glass has come forward (0..1); how visible the text is (0..1)
-  let script = [], t0 = 0, raf = 0, pane = null, disp = null;
+  const BEND = 26;    // displacement (gentle: the text softens and shifts, never warps)
+  let last = performance.now(), veiled = false, timers = [], mapKey = "";
 
   const on = () => window.PyaarSettings?.get("libraryVeil") !== false;
   const host = () => document.getElementById("Desktop_LeftSidebar_Id");
-  const ease = (k) => 0.5 - Math.cos(Math.PI * k) / 2;
+  const later = (ms, fn) => timers.push(setTimeout(fn, ms));
+  const stop = () => { timers.forEach(clearTimeout); timers = []; };
 
   // The glass's displacement map: the panel's shape blurred into a soft
   // height field, its slope pointing inward, so near the rim the view is
@@ -2008,7 +2014,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 
   function lensFor(w, h) {
     const key = `${w}x${h}`;
-    if (key === mapKey && disp?.isConnected) return;
+    if (key === mapKey && document.getElementById("mt-veil-lens")) return;
     mapKey = key;
     let holder = document.getElementById("mt-veil-svg");
     if (!holder) {
@@ -2025,15 +2031,13 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
               primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
         <feImage href="${slabMap(w, h, 20)}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none" result="raw"/>
         <feGaussianBlur in="raw" stdDeviation="2" result="map"/>
-        <feDisplacementMap in="SourceGraphic" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G"/>
+        <feDisplacementMap in="SourceGraphic" in2="map" scale="${BEND}" xChannelSelector="R" yChannelSelector="G"/>
       </filter>`;
-    disp = holder.querySelector("feDisplacementMap");
   }
 
   function slab(lib) {
-    pane = lib.querySelector(":scope > .mt-veil");
-    if (!pane) {
-      pane = document.createElement("div");
+    if (!lib.querySelector(":scope > .mt-veil")) {
+      const pane = document.createElement("div");
       pane.className = "mt-veil";
       pane.setAttribute("aria-hidden", "true");
       lib.append(pane);
@@ -2041,67 +2045,39 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     lensFor(lib.clientWidth, lib.clientHeight);
   }
 
-  // Draws the current state: the glass's frost, bend and presence, and the
-  // text's visibility (it softens as it fades, so it melts rather than dims)
-  function apply() {
-    const lib = host();
-    if (!lib) return;
-    if (!pane?.isConnected) slab(lib);
-    pane.style.visibility = g > 0.002 ? "visible" : "hidden";
-    pane.style.opacity = g.toFixed(3);
-    pane.style.setProperty("--veil-blur", (FROST * g).toFixed(2) + "px");
-    pane.style.transform = `scale(${(0.985 + 0.015 * g).toFixed(4)})`;
-    disp?.setAttribute("scale", (BEND * g).toFixed(1));
-    for (const el of lib.querySelectorAll(":scope > nav > div > *")) {
-      el.style.opacity = x >= 0.999 ? "" : x.toFixed(3);
-      el.style.filter = x >= 0.999 || x <= 0.001 ? "" : `blur(${((1 - x) * 6).toFixed(2)}px)`;
-    }
-  }
-
-  // Plays a little score: each step eases one value (g or x) to a target,
-  // starting from wherever it is when the step begins, so a reveal in the
-  // middle of a dissolve turns back smoothly
-  function run(steps) {
-    script = steps.map((s) => ({ ...s, from: null }));
-    t0 = performance.now();
-    if (!raf) raf = requestAnimationFrame(tick);
-  }
-  function tick(now) {
-    const t = (now - t0) / 1000;
-    let busyNow = false;
-    for (const s of script) {
-      if (t < s.at) { busyNow = true; continue; }
-      if (s.from === null) s.from = s.ch === "g" ? g : x;
-      const k = Math.min(1, (t - s.at) / s.dur);
-      const v = s.from + (s.to - s.from) * ease(k);
-      if (s.ch === "g") g = v; else x = v;
-      if (k < 1) busyNow = true;
-    }
-    apply();
-    raf = busyNow ? requestAnimationFrame(tick) : 0;
-  }
-
-  // Dissolving: the glass comes forward over 3.2 s, the text melts away
-  // under it from 1.6 s, and the glass recedes from 3.8 s (about 7 s in all)
+  // The stages are classes on the panel (user.css times each one):
+  // mt-veil-on (glass present), -glass (come forward), -gone (text melted),
+  // -recede (glass leaving, slowly), -rest (hidden), -back (quicker timings)
   function hide() {
     const lib = host();
     if (!lib || veiled) return;
     slab(lib);
+    stop();
     veiled = true;
-    run([
-      { ch: "g", at: 0, dur: 3.2, to: 1 },
-      { ch: "x", at: 1.6, dur: 2.4, to: 0 },
-      { ch: "g", at: 3.8, dur: 3.0, to: 0 },
-    ]);
+    lib.classList.remove("mt-veil-back", "mt-veil-recede", "mt-veil-rest");
+    lib.classList.add("mt-veil-on");
+    // The glass comes forward over 3.4 s...
+    requestAnimationFrame(() => requestAnimationFrame(() => lib.classList.add("mt-veil-glass")));
+    // ...the text melts away under it from 2 s (over 3 s)...
+    later(2000, () => lib.classList.add("mt-veil-gone"));
+    // ...and from 4.6 s the glass recedes into the light (over 4.2 s)
+    later(4600, () => { lib.classList.add("mt-veil-recede"); lib.classList.remove("mt-veil-glass"); });
+    later(9000, () => lib.classList.add("mt-veil-rest"));
   }
-  // Returning, the same way but quicker (about 2.2 s), since you're back
+
+  // Returning, the same way, quicker (about 3 s): the glass comes forward,
+  // the text forms under it, and the glass recedes leaving it sharp
   function reveal() {
+    const lib = host();
     veiled = false;
-    run([
-      { ch: "g", at: 0, dur: 0.7, to: 1 },
-      { ch: "x", at: 0.35, dur: 1.0, to: 1 },
-      { ch: "g", at: 1.0, dur: 1.2, to: 0 },
-    ]);
+    stop();
+    if (!lib) return;
+    lib.classList.remove("mt-veil-rest", "mt-veil-recede");
+    lib.classList.add("mt-veil-on", "mt-veil-back");
+    requestAnimationFrame(() => lib.classList.add("mt-veil-glass"));
+    later(450, () => lib.classList.remove("mt-veil-gone"));
+    later(1250, () => { lib.classList.add("mt-veil-recede"); lib.classList.remove("mt-veil-glass"); });
+    later(3200, () => lib.classList.remove("mt-veil-on", "mt-veil-back", "mt-veil-recede"));
   }
 
   // Not while something needs the library or the pointer: a menu, a dialog,
@@ -2131,8 +2107,6 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     if (document.hidden) return;
     if (!on()) { if (veiled) reveal(); return; }
     if (!veiled && performance.now() - last > IDLE_MS && !busy()) hide();
-    // Spotify may re-render the list while it's cleared: keep it cleared
-    else if (veiled && !raf) apply();
   }, 500);
 })();
 
