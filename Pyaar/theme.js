@@ -563,7 +563,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   const KEY = "pyaar:settings";
   // Music sync and the center light's tempo start off; they are turned on in
   // Pyaar Settings. The lights start in Full motion (the lights button).
-  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false, lightMode: "full" };
+  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false, lightMode: "full", libraryVeil: true };
   const state = { ...DEFAULTS };
   let saved = {};
   try {
@@ -752,7 +752,8 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     group.append(el("h3", "mt-set-group-title", "Lights"),
       segRow("Motion", "Balanced and Still are lighter on older PCs", "lightMode", MODES),
       switchRow("Center light", "The moving light behind the center", "centerLight"),
-      switchRow("Follow the tempo", "The center light speeds up and slows down with the song's tempo", "lightTempo", "centerLight"));
+      switchRow("Follow the tempo", "The center light speeds up and slows down with the song's tempo", "lightTempo", "centerLight"),
+      switchRow("Clear library when idle", "After 5 s without the mouse, the library's text fades into the glass", "libraryVeil"));
     // The rest (music sync and its style) is in the full window
     const more = el("button", "mt-set-row mt-set-link");
     more.type = "button";
@@ -1931,6 +1932,176 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     const heart = e.target;
     if (!heart.closest(HOSTS)?.matches(":hover")) heart.classList.remove("mt-gh-play");
   });
+})();
+
+// Pyaar: the library clears when you leave the mouse alone. After 5 s with
+// no mouse, wheel or key input anywhere in Spotify, a tilted slab of glass
+// (with a thin bright rim, like the reference) slides across the library
+// from the left. Behind its hard edge the text frosts and bends (the rim
+// refracts it, as the glass heart does); once the slab covers the panel the
+// text fades out under it, then the slab itself dissolves, leaving only the
+// library light and its music. Any input brings it back: the slab returns
+// over the text and slides away to the left, and the text is sharp again.
+// Switched in the lights menu ("Clear library when idle"). Only the moments
+// of the sweep cost anything; while cleared, the list simply isn't drawn.
+(function libraryVeil() {
+  const IDLE_MS = 5000;
+  const NS = "http://www.w3.org/2000/svg";
+  const RADIUS = 36;   // the slab's corners (CSS px)
+  const RIM = 44;      // how far in from its edge the glass bends the view
+  let last = performance.now(), veiled = false, timers = [], mapKey = "";
+
+  const on = () => window.PyaarSettings?.get("libraryVeil") !== false;
+  const host = () => document.getElementById("Desktop_LeftSidebar_Id");
+  const later = (ms, fn) => timers.push(setTimeout(fn, ms));
+  const stop = () => { timers.forEach(clearTimeout); timers = []; };
+
+  // The slab's displacement map: a rounded rectangle blurred into a soft
+  // height field, its slope pointing outward, eased so the middle stays
+  // clear and the bend gathers at the rim (as in the glass heart's lensMap).
+  // Drawn at a quarter of the slab's size; the filter scales it up.
+  function slabMap(w, h) {
+    const S = 0.25, W = Math.max(8, Math.round(w * S)), H = Math.max(8, Math.round(h * S));
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = H;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    const draw = (blur) => {
+      g.filter = "none";
+      g.fillStyle = "#000";
+      g.fillRect(0, 0, W, H);
+      g.filter = blur ? `blur(${blur}px)` : "none";
+      g.fillStyle = "#fff";
+      g.beginPath();
+      g.roundRect(0, 0, W, H, RADIUS * S);
+      g.fill();
+      return g.getImageData(0, 0, W, H).data;
+    };
+    const inside = draw(0), hf = draw(RIM * S * 0.5);
+    const gx = new Float32Array(W * H), gy = new Float32Array(W * H);
+    let max = 1e-6;
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const i = y * W + x;
+        if (inside[i * 4] < 128) continue;
+        gx[i] = (hf[(i + 1) * 4] - hf[(i - 1) * 4]) / 2;
+        gy[i] = (hf[(i + W) * 4] - hf[(i - W) * 4]) / 2;
+        max = Math.max(max, Math.hypot(gx[i], gy[i]));
+      }
+    }
+    const out = g.createImageData(W, H);
+    for (let i = 0; i < W * H; i++) {
+      const m = Math.hypot(gx[i], gy[i]) / max;
+      const k = m > 0 ? m ** 0.6 / m / max : 0;
+      out.data[i * 4] = 128 - 127 * gx[i] * k;
+      out.data[i * 4 + 1] = 128 - 127 * gy[i] * k;
+      out.data[i * 4 + 2] = 128;
+      out.data[i * 4 + 3] = 255;
+    }
+    g.filter = "none";
+    g.putImageData(out, 0, 0);
+    return c.toDataURL();
+  }
+
+  function lensFor(w, h) {
+    const key = `${w}x${h}`;
+    if (key === mapKey) return;
+    mapKey = key;
+    let holder = document.getElementById("mt-veil-svg");
+    if (!holder) {
+      holder = document.createElementNS(NS, "svg");
+      holder.id = "mt-veil-svg";
+      holder.setAttribute("width", "0");
+      holder.setAttribute("height", "0");
+      holder.setAttribute("aria-hidden", "true");
+      holder.style.position = "absolute";
+      document.body.append(holder);
+    }
+    holder.innerHTML = `
+      <filter id="mt-veil-lens" x="0" y="0" width="${w}" height="${h}" filterUnits="userSpaceOnUse"
+              primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+        <feImage href="${slabMap(w, h)}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none" result="raw"/>
+        <feGaussianBlur in="raw" stdDeviation="2" result="map"/>
+        <feDisplacementMap in="SourceGraphic" in2="map" scale="90" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>`;
+  }
+
+  // The slab: wider and taller than the panel, so tilted it still covers it
+  function slab(lib) {
+    let el = lib.querySelector(":scope > .mt-veil");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "mt-veil";
+      el.setAttribute("aria-hidden", "true");
+      lib.append(el);
+    }
+    const w = Math.round(lib.clientWidth * 1.6), h = Math.round(lib.clientHeight * 1.15);
+    el.style.setProperty("--veil-w", w + "px");
+    el.style.setProperty("--veil-h", h + "px");
+    el.style.setProperty("--veil-x", Math.round((lib.clientWidth - w) / 2) + "px");
+    el.style.setProperty("--veil-y", Math.round((lib.clientHeight - h) / 2) + "px");
+    lensFor(w, h);
+    return el;
+  }
+
+  // Not while something needs the library or the pointer: a menu, a dialog,
+  // the Pyaar windows, typing, or a press in progress. (Spotify keeps some
+  // dialogs in the page while hidden, so only ones on screen count.)
+  let pressed = false;
+  const OPEN = "[role='menu'], [role='dialog'], .mt-settings-backdrop, .mt-pop-layer, [data-testid='context-menu']";
+  function busy() {
+    const a = document.activeElement;
+    return pressed
+      || (a && (a.matches?.("input, textarea, [contenteditable='true']")))
+      || [...document.querySelectorAll(OPEN)].some((e) => e.getClientRects().length > 0);
+  }
+
+  function hide() {
+    const lib = host();
+    if (!lib || veiled) return;
+    slab(lib);
+    stop();
+    veiled = true;
+    lib.classList.remove("mt-veil-back", "mt-veil-rest");
+    lib.classList.add("mt-veil-on");
+    // The slab sweeps in from the left over the text...
+    requestAnimationFrame(() => requestAnimationFrame(() => lib.classList.add("mt-veil-cover")));
+    // ...the text fades under it, then the slab dissolves into the light
+    later(1400, () => lib.classList.add("mt-veil-gone"));
+    later(2000, () => lib.classList.add("mt-veil-clear"));
+    later(2900, () => lib.classList.add("mt-veil-rest"));
+  }
+
+  function reveal() {
+    const lib = host();
+    veiled = false;
+    stop();
+    if (!lib) return;
+    // The slab comes back over the text (quickly), the text returns under
+    // it, and the slab slides back out to the left
+    lib.classList.add("mt-veil-back");
+    lib.classList.remove("mt-veil-rest");
+    requestAnimationFrame(() => lib.classList.remove("mt-veil-clear", "mt-veil-gone"));
+    later(300, () => lib.classList.remove("mt-veil-cover"));
+    later(1250, () => lib.classList.remove("mt-veil-on", "mt-veil-back"));
+  }
+
+  const input = () => {
+    last = performance.now();
+    if (veiled) reveal();
+  };
+  for (const type of ["pointermove", "pointerdown", "wheel", "keydown", "touchstart"]) {
+    document.addEventListener(type, input, { capture: true, passive: true });
+  }
+  document.addEventListener("pointerdown", () => { pressed = true; }, true);
+  document.addEventListener("pointerup", () => { pressed = false; }, true);
+  document.addEventListener("pointercancel", () => { pressed = false; }, true);
+
+  setInterval(() => {
+    if (document.hidden) return;
+    if (!on()) { if (veiled) reveal(); return; }
+    if (!veiled && performance.now() - last > IDLE_MS && !busy()) hide();
+  }, 500);
 })();
 
 // Pyaar: the love burst. Liking a song sets off a glossy, minimal moment in

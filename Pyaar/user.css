@@ -750,6 +750,18 @@ body :is(span, p, a, h1, h2, h3, h4, button, input, div, li, label) {
   filter: drop-shadow(0 0 2.5px rgb(225 230 240 / 0.45));
 }
 
+/* Clear glass shows (and brightens) what's behind it, so over a red cover
+ * it read as a red heart, like the like button. The settings hearts' glass
+ * drains the color from behind instead, so they stay silver on any song. */
+.mt-gh-silver .mt-gh-lens {
+  backdrop-filter: blur(1.2px) saturate(0.1) brightness(1.15);
+  backdrop-filter: url(#mt-heart-lens) blur(0.5px) saturate(0.1) brightness(1.2);
+  background: radial-gradient(ellipse 60% 58% at 50% 50%,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.14) 55%,
+    rgba(255, 255, 255, 0.26) 100%);
+}
+
 .mt-gh-silver.mt-gh-filled .mt-gh-fill {
   filter: none;
 }
@@ -2171,4 +2183,85 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
 
 .mt-seg-option[aria-checked="true"] {
   color: #fff;
+}
+
+/* ------------------------------------------------------------------ */
+/* The library clears when idle (theme.js, libraryVeil): a tilted slab */
+/* of glass sweeps across the panel from the left; behind its hard     */
+/* edge the text frosts and bends, then fades out under it, and the    */
+/* slab dissolves, leaving only the library light. Any input brings    */
+/* the slab back over the text and slides it away to the left.         */
+/* ------------------------------------------------------------------ */
+.mt-veil {
+  position: absolute;
+  z-index: 2;
+  left: var(--veil-x, 0);
+  top: var(--veil-y, 0);
+  width: var(--veil-w, 100%);
+  height: var(--veil-h, 100%);
+  border-radius: 36px;
+  pointer-events: none;
+  visibility: hidden;
+  /* Thick clear glass: frosts what's behind it, and its rim bends it
+   * (#mt-veil-lens). Plain frosted glass is the fallback. */
+  backdrop-filter: blur(9px) saturate(1.15) brightness(1.06);
+  backdrop-filter: url(#mt-veil-lens) blur(9px) saturate(1.15) brightness(1.06);
+  background:
+    linear-gradient(115deg,
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.015) 38%,
+      rgba(255, 255, 255, 0.01) 70%,
+      rgba(255, 255, 255, 0.05) 100%);
+  box-shadow:
+    /* light caught inside the thick edge */
+    inset 0 0 22px rgba(255, 255, 255, 0.07),
+    inset -18px 0 26px -20px rgba(255, 255, 255, 0.3),
+    /* a soft shadow where it lifts off the panel */
+    0 24px 60px rgba(0, 0, 0, 0.35);
+  transform: rotate(-6deg) translateX(-118%);
+  opacity: 1;
+  transition:
+    transform 1.3s cubic-bezier(0.65, 0, 0.35, 1),
+    opacity 0.8s ease;
+}
+
+/* The thin bright rim, brightest where the light falls on it */
+.mt-veil::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.2px;
+  background: linear-gradient(150deg,
+    rgba(255, 255, 255, 0.85),
+    rgba(255, 255, 255, 0.35) 30%,
+    rgba(255, 255, 255, 0.28) 60%,
+    rgba(255, 255, 255, 0.7));
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+
+#Desktop_LeftSidebar_Id.mt-veil-on > .mt-veil { visibility: visible; }
+#Desktop_LeftSidebar_Id.mt-veil-cover > .mt-veil { transform: rotate(-6deg) translateX(0); }
+#Desktop_LeftSidebar_Id.mt-veil-clear > .mt-veil { opacity: 0; }
+#Desktop_LeftSidebar_Id.mt-veil-rest > .mt-veil { visibility: hidden; }
+
+/* The text fades out under the slab, and back in under it */
+#Desktop_LeftSidebar_Id > nav > div > * {
+  transition: opacity 0.6s ease;
+}
+
+#Desktop_LeftSidebar_Id.mt-veil-gone > nav > div > * {
+  opacity: 0;
+}
+
+/* Coming back is quicker: the slab returns at once and slides away */
+#Desktop_LeftSidebar_Id.mt-veil-back > .mt-veil {
+  transition:
+    transform 0.85s cubic-bezier(0.65, 0, 0.35, 1),
+    opacity 0.25s ease;
+}
+
+#Desktop_LeftSidebar_Id.mt-veil-back > nav > div > * {
+  transition-duration: 0.25s;
 }
