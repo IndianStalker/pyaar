@@ -627,6 +627,10 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 
   const LEVELS = [["subtle", "Subtle"], ["normal", "Normal"], ["strong", "Strong"]];
   const MODES = [["full", "Full"], ["balanced", "Balanced"], ["still", "Still"]];
+  // The motion preset as html[data-mt-mode], for user.css (Still's frost)
+  const applyMode = () => { document.documentElement.dataset.mtMode = state.lightMode || "full"; };
+  applyMode();
+  S.on((key) => key === "lightMode" && applyMode());
 
   // The settings window: frosted glass in the song's colors (user.css,
   // "Pyaar Settings window"). Grows into the full visual controls later.
@@ -1254,6 +1258,79 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   requestAnimationFrame(frame);
 })();
 
+// Pyaar: frozen frost for the Still preset. In Still the lights don't move,
+// but the glass over them (the library slab, the main view) still re-blurs
+// on every frame anything inside it changes, such as each frame of
+// scrolling. So in Still the light under each glass is blurred once, with
+// the glass's own blur, saturation and brightness, into a still image
+// beneath it, and that glass's live blur is switched off: the same picture,
+// computed once instead of every frame. It's redrawn only when the light
+// itself redraws (a song's colors arriving, a resize). Edges are extended
+// before blurring, as the live glass does, so the rim matches too.
+(function stillFrost() {
+  const GLASS = {
+    flow: { blur: 22, saturate: 1.25, brightness: 1.05 }, // the library slab
+    silk: { blur: 7, saturate: 1.1, brightness: 1.03 },   // the main view
+  };
+  const canvases = {};
+  let pad = null;
+
+  function canvasFor(kind, src) {
+    let c = canvases[kind];
+    if (!c?.isConnected || c.previousElementSibling !== src) {
+      c = c || document.createElement("canvas");
+      c.id = `mt-${kind}-frost`;
+      c.className = "mt-frost";
+      c.setAttribute("aria-hidden", "true");
+      src.after(c);
+      canvases[kind] = c;
+    }
+    return c;
+  }
+
+  // kind: "flow" | "silk"; src: the light's WebGL canvas (just drawn);
+  // srcScale: its pixels per CSS px; rect: the glass's area in the light's
+  // CSS px ({x, y, w, h}), where the frost canvas is placed
+  function draw(kind, src, srcScale, rect) {
+    const g = GLASS[kind], dpr = window.devicePixelRatio || 1;
+    const W = Math.max(2, Math.round(rect.w * dpr)), H = Math.max(2, Math.round(rect.h * dpr));
+    const R = g.blur * dpr, P = Math.ceil(R * 3);
+    pad = pad || document.createElement("canvas");
+    if (pad.width !== W + 2 * P || pad.height !== H + 2 * P) {
+      pad.width = W + 2 * P;
+      pad.height = H + 2 * P;
+    }
+    const p = pad.getContext("2d");
+    p.imageSmoothingQuality = "high";
+    // The light under the glass, then its edge pixels stretched outward
+    p.drawImage(src, rect.x * srcScale, rect.y * srcScale, rect.w * srcScale, rect.h * srcScale, P, P, W, H);
+    p.drawImage(pad, P, P, 1, H, 0, P, P, H);
+    p.drawImage(pad, P + W - 1, P, 1, H, P + W, P, P, H);
+    p.drawImage(pad, 0, P, W + 2 * P, 1, 0, 0, W + 2 * P, P);
+    p.drawImage(pad, 0, P + H - 1, W + 2 * P, 1, 0, P + H, W + 2 * P, P);
+    const c = canvasFor(kind, src);
+    if (c.width !== W || c.height !== H) {
+      c.width = W;
+      c.height = H;
+    }
+    c.style.left = rect.x + "px";
+    c.style.top = rect.y + "px";
+    c.style.width = rect.w + "px";
+    c.style.height = rect.h + "px";
+    const o = c.getContext("2d");
+    o.filter = `blur(${R}px) saturate(${g.saturate}) brightness(${g.brightness})`;
+    o.drawImage(pad, -P, -P);
+    o.filter = "none";
+    document.documentElement.setAttribute(`data-mt-frost-${kind}`, "");
+  }
+
+  function clear(kind) {
+    document.documentElement.removeAttribute(`data-mt-frost-${kind}`);
+  }
+
+  window.__mtFrost = { draw, clear };
+})();
+
 // Pyaar: the flowing liquid-glass ribbon behind the library's frosted glass.
 // A small WebGL shader draws a wide, twisting sheet of liquid glass standing
 // upright and flowing slowly, colored only with the current cover's colors
@@ -1456,6 +1533,10 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
       gl.uniform3fv(loc[key], love ? colors[key].map((v, i) => v + (LOVE[key][i] - v) * love) : colors[key]);
     }
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    // Still: the library slab's glass gets its frost from this frame
+    // (stillFrost), instead of re-blurring live
+    if (still) window.__mtFrost?.draw("flow", canvas, SCALE, { x: 0, y: 0, w: size.w, h: size.h });
+    else window.__mtFrost?.clear("flow");
   }
 
   function start() {
@@ -1644,6 +1725,8 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   let energy = 1;
   // The part of the screen under the library's solid panel, in CSS pixels
   let covered = null;
+  // The main view's glass, in the container's CSS px (for Still's frost)
+  let glass = null;
 
   function parseColor(str) {
     const m = str.match(/[\d.]+/g);
@@ -1661,6 +1744,12 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     // The library hides the light where its background is solid: below its
     // rounded top corners, and only while it is fully opaque
     covered = null;
+    glass = null;
+    const mv = document.getElementById("main-view");
+    if (mv && host?.isConnected) {
+      const a = mv.getBoundingClientRect(), b = host.getBoundingClientRect();
+      if (a.width > 0) glass = { x: Math.round(a.left - b.left), y: Math.round(a.top - b.top), w: Math.round(a.width), h: Math.round(a.height) };
+    }
     const lib = document.getElementById("Desktop_LeftSidebar_Id");
     if (lib) {
       const ls = getComputedStyle(lib);
@@ -1720,7 +1809,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     // Turned off in the Pyaar menu: the center stays pure black
     const on = window.PyaarSettings?.get("centerLight") !== false;
     if (on !== shown) canvas.style.display = (shown = on) ? "" : "none";
-    if (!on) return;
+    if (!on) { window.__mtFrost?.clear("silk"); return; }
     if (!host?.isConnected) host = document.querySelector(".Root__top-container");
     if (!host) return;
     if (canvas.parentElement !== host) host.prepend(canvas);
@@ -1745,7 +1834,8 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     // love burst changes
     const love = window.__mtLove || 0;
     const edge = covered ? [covered.x0, covered.y0, covered.x1, covered.y1].map(Math.round).join(",") : "";
-    const sig = `${w}x${h}|${energy.toFixed(3)}|${edge}|${mode}`;
+    const gl8 = glass ? `${glass.x},${glass.y},${glass.w},${glass.h}` : "";
+    const sig = `${w}x${h}|${energy.toFixed(3)}|${edge}|${gl8}|${mode}`;
     if (still && sig === drawn && moving < 0.002 && !love) return;
     drawn = sig;
     const crease = frameUniforms(clock);
@@ -1762,6 +1852,9 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     gl.uniform4fv(loc.pan, pan);
     gl.uniform3fv(loc.rc, loveMix);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    // Still: the main view's glass gets its frost from this frame
+    if (still && glass) window.__mtFrost?.draw("silk", canvas, scale, glass);
+    else window.__mtFrost?.clear("silk");
   }
 
   function start() {
