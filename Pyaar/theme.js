@@ -2817,22 +2817,56 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     start = performance.now();
     if (!anim) anim = requestAnimationFrame(frame);
   }
+  // Liking a song plays only the burst's color moment (the user's choice,
+  // 2026-10-16): the whole theme washes into its hot pink and violet and
+  // cools back to the song's colors, with none of the drawings (no heart
+  // swell, comet, sky, bars or glass heart). Same timing as the full burst:
+  // in over LOVE_IN, held, then back over LOVE_OUT.
+  let wash = 0;
+  function playColors() {
+    const root = document.documentElement;
+    root.removeAttribute("data-mt-love-out");
+    root.setAttribute("data-mt-love", "");
+    const t0 = performance.now();
+    cancelAnimationFrame(wash);
+    const step = (now) => {
+      const t = (now - t0) / 1000;
+      setLove(t);
+      if (t > LOVE_OUT[0] && root.hasAttribute("data-mt-love")) {
+        root.removeAttribute("data-mt-love");
+        root.setAttribute("data-mt-love-out", "");
+      }
+      if (t > LOVE_OUT[1]) {
+        window.__mtLove = 0;
+        wash = 0;
+        // the theme's colors finish fading back (2.2 s from LOVE_OUT[0])
+        setTimeout(() => !window.__mtLove && root.removeAttribute("data-mt-love-out"), 1000);
+        return;
+      }
+      wash = requestAnimationFrame(step);
+    };
+    wash = requestAnimationFrame(step);
+  }
+
   // For checking it: PyaarLove.hold(1.2) freezes the burst at 1.2 s,
-  // PyaarLove.hold(null) lets it run on
+  // PyaarLove.hold(null) lets it run on; PyaarLove.colors() plays the wash
   window.PyaarLove = {
     play,
+    colors: playColors,
     hold(t) { if (t != null && !anim) play(); held = t; if (t == null) start = performance.now(); },
   };
 
-  // Switched off for now: liking only turns the heart pink glass. Set to true
-  // to play the burst on each like again (PyaarLove.play() still works).
+  // What liking a song plays: the full burst is off (PyaarLove.play() still
+  // works); its color wash is on
   const PLAY_ON_LIKE = false;
+  const COLORS_ON_LIKE = true;
 
-  // Capture phase: read the button's state before Spotify flips it, so the
-  // burst only plays when liking (not when removing a like)
+  // Capture phase: read the button's state before Spotify flips it, so it
+  // only plays when liking (not when removing a like)
   document.addEventListener("click", (e) => {
-    if (!PLAY_ON_LIKE) return;
     const button = e.target.closest?.(".mt-like");
-    if (button && button.getAttribute("aria-checked") === "false") play();
+    if (!button || button.getAttribute("aria-checked") !== "false") return;
+    if (PLAY_ON_LIKE) play();
+    else if (COLORS_ON_LIKE) playColors();
   }, true);
 })();
