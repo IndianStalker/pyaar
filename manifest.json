@@ -7,7 +7,7 @@
     "usercss": "Pyaar/user.css",
     "schemes": "Pyaar/color.ini",
     "include": [
-      "https://cdn.jsdelivr.net/gh/IndianStalker/pyaar@6a69acc1dc672de14361950d10f85e55ba905559/Pyaar/theme.js"
+      "https://cdn.jsdelivr.net/gh/IndianStalker/pyaar@a5571067f33aca469bc77348a767db7af6bc58a6/Pyaar/theme.js"
     ],
     "authors": [
       { "name": "IndianStalker", "url": "https://github.com/IndianStalker" }
