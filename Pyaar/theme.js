@@ -207,6 +207,17 @@
 // slow CSS loops below, both shaders and the progress bar all follow it.
 window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
 
+// Pyaar: the like wash spreading from the heart (loveBurst sets
+// window.__mtLoveWave = { x, y, r, feather } in viewport CSS px). For a light
+// whose canvas covers rect (viewport CSS px) at `scale` canvas px per CSS px
+// and `h` canvas px tall, the wave's center, radius and soft edge in that
+// canvas's pixels (y up, as gl_FragCoord). With no wave, it covers everything.
+window.__mtWaveFor = (rect, scale, h) => {
+  const w = window.__mtLoveWave;
+  if (!w || !rect) return [0, 0, 1e7, 1];
+  return [(w.x - rect.left) * scale, h - (w.y - rect.top) * scale, w.r * scale, Math.max(1, w.feather * scale)];
+};
+
 // Pyaar: element sizes for the lights, kept by a ResizeObserver. Reading
 // clientWidth/clientHeight every frame forced the page to recalculate its
 // styles and layout in the middle of the frame (2.5 ms a frame, and up to
@@ -598,9 +609,10 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 // (get / set / on). The menu is where the theme's visual controls will grow.
 (function settings() {
   const KEY = "pyaar:settings";
-  // Music sync and the center light's tempo start off; they are turned on in
-  // Pyaar Settings. The lights start in Full motion (the lights button).
-  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false, lightMode: "full", libraryVeil: true };
+  // Music sync starts on, at Normal; the center light's tempo starts off.
+  // The lights start in Full motion, and the library clears when idle (the
+  // lights button).
+  const DEFAULTS = { musicSync: true, syncIntensity: "normal", centerLight: true, lightTempo: false, lightMode: "full", libraryVeil: true };
   const state = { ...DEFAULTS };
   let saved = {};
   try {
@@ -796,7 +808,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
       segRow("Motion", "Balanced and Still are lighter on older PCs", "lightMode", MODES),
       switchRow("Center light", "The moving light behind the center", "centerLight"),
       switchRow("Follow the tempo", "The center light speeds up and slows down with the song's tempo", "lightTempo", "centerLight"),
-      switchRow("Clear library when idle", "After 10 s without the mouse, the library's text dissolves into its light", "libraryVeil"));
+      switchRow("Clear library when idle", "After 7 s without the mouse, the library's text dissolves into its light", "libraryVeil"));
     // The rest (music sync and its style) is in the full window
     const more = el("button", "mt-set-row mt-set-link");
     more.type = "button";
@@ -1349,7 +1361,13 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     uniform float energy;
     uniform float pulse;   // bass hit, 0..1.5
     uniform float shimmer; // bright sounds (hi-hats, snares)
-    uniform vec3 p0, p1, p2, p3, p4, base, hi, bg;
+    uniform vec3 s0, s1, s2, s3, s4, sbase, shi, sbg; // the song's colors
+    uniform vec3 l0, l1, l2, l3, l4, lbase, lhi, lbg; // the like wash's
+    uniform vec4 wave; // the wash spreading from the heart: center, radius, soft edge (px)
+    uniform float lv;  // the wash's strength, 0..1
+    // This pixel's colors: the song's, or the wash's where it has reached
+    vec3 p0, p1, p2, p3, p4, base, hi, bg;
+    float lk;
 
     // The cover's colors blended smoothly: a slow, continuous drift through them
     vec3 accent(float x) {
@@ -1401,6 +1419,10 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     }
 
     void main() {
+      lk = lv * (1.0 - smoothstep(wave.z - wave.w, wave.z, distance(gl_FragCoord.xy, wave.xy)));
+      p0 = mix(s0, l0, lk); p1 = mix(s1, l1, lk); p2 = mix(s2, l2, lk);
+      p3 = mix(s3, l3, lk); p4 = mix(s4, l4, lk);
+      base = mix(sbase, lbase, lk); hi = mix(shi, lhi, lk); bg = mix(sbg, lbg, lk);
       vec2 uv = gl_FragCoord.xy / res;
       uv.y = 1.0 - uv.y;
       float aspect = res.x / res.y;
@@ -1409,7 +1431,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
       vec4 a = sheet(uv, aspect, 0.0, 0.11, 0.16, 0.34);
       c = mix(c, c * 0.5 + b.rgb * 0.6, b.a * 0.7) + b.rgb * 0.6 * (1.0 - b.a);
       c = mix(c, c * 0.3 + a.rgb, a.a * 0.88) + a.rgb * (1.0 - a.a);
-      gl_FragColor = vec4(c * (0.5 + 0.4 * energy) * (1.0 + 0.12 * pulse), 1.0);
+      gl_FragColor = vec4(c * (0.5 + 0.4 * (energy + 0.8 * lk)) * (1.0 + 0.12 * pulse), 1.0);
     }`;
 
   const SCALE = 0.5; // render at half the panel's CSS size; the glass blurs it
@@ -1418,6 +1440,10 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   const target = JSON.parse(JSON.stringify(colors));
   // The love burst's hot pink and violet (see loveBurst)
   const LOVE = { p0: [1, 0.25, 0.9], p1: [1, 0.14, 0.59], p2: [0.59, 0.33, 1], p3: [1, 0.55, 0.96], p4: [0.45, 0.3, 1], base: [1, 0.25, 0.9], hi: [1, 0.85, 0.98], bg: [0.08, 0.03, 0.22] };
+  // Each color's uniforms: s<suffix> (song) and l<suffix> (wash)
+  const SUFFIX = { p0: "0", p1: "1", p2: "2", p3: "3", p4: "4", base: "base", hi: "hi", bg: "bg" };
+  // The panel's place on screen, for the wash's position (with readTheme)
+  let hostRect = null;
   let energy = 1;
 
   function parseColor(str) {
@@ -1439,6 +1465,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     if (dark) target.bg = dark.map((v) => v * 0.55);
     const e = parseFloat(cs.getPropertyValue("--mt-energy"));
     if (Number.isFinite(e)) energy = e;
+    hostRect = document.getElementById("Desktop_LeftSidebar_Id")?.getBoundingClientRect() || null;
   }
 
   function compile(type, src) {
@@ -1466,7 +1493,11 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     const pos = gl.getAttribLocation(prog, "pos");
     gl.enableVertexAttribArray(pos);
     gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-    for (const n of ["res", "t", "energy", "pulse", "shimmer", "p0", "p1", "p2", "p3", "p4", "base", "hi", "bg"]) loc[n] = gl.getUniformLocation(prog, n);
+    for (const n of ["res", "t", "energy", "pulse", "shimmer", "wave", "lv"]) loc[n] = gl.getUniformLocation(prog, n);
+    for (const [key, suffix] of Object.entries(SUFFIX)) {
+      loc["s" + key] = gl.getUniformLocation(prog, "s" + suffix);
+      loc["l" + key] = gl.getUniformLocation(prog, "l" + suffix);
+    }
     return true;
   }
 
@@ -1524,14 +1555,18 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     gl.uniform1f(loc.t, clock);
     // Louder parts, each swell, build-ups and drops all lift its glow
     // The love burst (window.__mtLove) turns the ribbon hot pink for a moment
-    gl.uniform1f(loc.energy, energy + love * 0.8 + (sync
+    gl.uniform1f(loc.energy, energy + (sync
       ? sync.amount * (sync.energy - 0.5) * 0.7 + sync.breath * 0.3 + sync.build * 0.15 + sync.bloom * 0.3
       : 0));
     gl.uniform1f(loc.pulse, sync?.pulse ?? 0);
     gl.uniform1f(loc.shimmer, sync?.shimmer ?? 0);
-    for (const key of ["p0", "p1", "p2", "p3", "p4", "base", "hi", "bg"]) {
-      gl.uniform3fv(loc[key], love ? colors[key].map((v, i) => v + (LOVE[key][i] - v) * love) : colors[key]);
+    // The song's colors, and the like wash's where it has spread to
+    for (const key in SUFFIX) {
+      gl.uniform3fv(loc["s" + key], colors[key]);
+      gl.uniform3fv(loc["l" + key], LOVE[key]);
     }
+    gl.uniform1f(loc.lv, love);
+    gl.uniform4fv(loc.wave, window.__mtWaveFor(hostRect, SCALE, h));
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     // Still: the library slab's glass gets its frost from this frame
     // (stillFrost), instead of re-blurring live
@@ -1585,23 +1620,27 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     uniform vec4 pan[6];   // each panel: center xy, tilt, size
     uniform vec2 pdir[6];  // each panel's tilt direction
     uniform vec3 rc[12];   // the artwork's colors, in proportion
+    uniform vec3 lc[12];   // the like wash's colors
+    uniform vec4 wave;     // the wash spreading from the heart: center, radius, soft edge (px)
+    uniform float lv;      // the wash's strength, 0..1
+    float lk;              // how much of the wash this pixel shows
 
     // A smooth loop through the artwork's colors, in proportion
     vec3 film(float x) {
       x = fract(x) * 12.0;
       float f = smoothstep(0.0, 1.0, fract(x));
-      if (x < 1.0) return mix(rc[0], rc[1], f);
-      if (x < 2.0) return mix(rc[1], rc[2], f);
-      if (x < 3.0) return mix(rc[2], rc[3], f);
-      if (x < 4.0) return mix(rc[3], rc[4], f);
-      if (x < 5.0) return mix(rc[4], rc[5], f);
-      if (x < 6.0) return mix(rc[5], rc[6], f);
-      if (x < 7.0) return mix(rc[6], rc[7], f);
-      if (x < 8.0) return mix(rc[7], rc[8], f);
-      if (x < 9.0) return mix(rc[8], rc[9], f);
-      if (x < 10.0) return mix(rc[9], rc[10], f);
-      if (x < 11.0) return mix(rc[10], rc[11], f);
-      return mix(rc[11], rc[0], f);
+      if (x < 1.0) return mix(mix(rc[0], lc[0], lk), mix(rc[1], lc[1], lk), f);
+      if (x < 2.0) return mix(mix(rc[1], lc[1], lk), mix(rc[2], lc[2], lk), f);
+      if (x < 3.0) return mix(mix(rc[2], lc[2], lk), mix(rc[3], lc[3], lk), f);
+      if (x < 4.0) return mix(mix(rc[3], lc[3], lk), mix(rc[4], lc[4], lk), f);
+      if (x < 5.0) return mix(mix(rc[4], lc[4], lk), mix(rc[5], lc[5], lk), f);
+      if (x < 6.0) return mix(mix(rc[5], lc[5], lk), mix(rc[6], lc[6], lk), f);
+      if (x < 7.0) return mix(mix(rc[6], lc[6], lk), mix(rc[7], lc[7], lk), f);
+      if (x < 8.0) return mix(mix(rc[7], lc[7], lk), mix(rc[8], lc[8], lk), f);
+      if (x < 9.0) return mix(mix(rc[8], lc[8], lk), mix(rc[9], lc[9], lk), f);
+      if (x < 10.0) return mix(mix(rc[9], lc[9], lk), mix(rc[10], lc[10], lk), f);
+      if (x < 11.0) return mix(mix(rc[10], lc[10], lk), mix(rc[11], lc[11], lk), f);
+      return mix(mix(rc[11], lc[11], lk), mix(rc[0], lc[0], lk), f);
     }
 
     // The surface's height (x) and slope (yz): overlapping panels of black
@@ -1638,6 +1677,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
         gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
         return;
       }
+      lk = lv * (1.0 - smoothstep(wave.z - wave.w, wave.z, distance(fc, wave.xy)));
       vec2 uv = fc / res;
       vec2 p = (uv - 0.5) * vec2(res.x / res.y, 1.0);
 
@@ -1669,7 +1709,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
       // Where light lands the artwork's color shows at its true brightness
       // (dimming a color on black shifts its hue, e.g. yellow turns olive)
       vec3 col = irid * (land * 1.0 + near * 0.24) * lines + vec3(1.0) * sheen * 0.25;
-      col = min(col, vec3(1.0)) * (0.84 + 0.15 * energy);
+      col = min(col, vec3(1.0)) * (0.84 + 0.15 * (energy + 2.5 * lk));
       gl_FragColor = vec4(col, 1.0);
     }`;
 
@@ -1721,12 +1761,13 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     1, 0.25, 0.9, 1, 0.42, 0.95, 1, 0.14, 0.59, 1, 0.25, 0.9, 0.75, 0.3, 1, 0.59, 0.33, 1,
     1, 0.42, 0.95, 1, 0.25, 0.85, 1, 0.55, 0.96, 0.48, 0.36, 1, 1, 0.14, 0.59, 1, 0.25, 0.9,
   ]);
-  const loveMix = new Float32Array(36);
   let energy = 1;
   // The part of the screen under the library's solid panel, in CSS pixels
   let covered = null;
   // The main view's glass, in the container's CSS px (for Still's frost)
   let glass = null;
+  // The container's place on screen, for the like wash's position
+  let hostRect = null;
 
   function parseColor(str) {
     const m = str.match(/[\d.]+/g);
@@ -1748,6 +1789,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     const mv = document.getElementById("main-view");
     if (mv && host?.isConnected) {
       const a = mv.getBoundingClientRect(), b = host.getBoundingClientRect();
+      hostRect = b;
       if (a.width > 0) glass = { x: Math.round(a.left - b.left), y: Math.round(a.top - b.top), w: Math.round(a.width), h: Math.round(a.height) };
     }
     const lib = document.getElementById("Desktop_LeftSidebar_Id");
@@ -1785,7 +1827,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     const pos = gl.getAttribLocation(prog, "pos");
     gl.enableVertexAttribArray(pos);
     gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-    for (const n of ["res", "skip", "t", "energy", "crease", "H", "pan", "pdir", "rc"]) loc[n] = gl.getUniformLocation(prog, n);
+    for (const n of ["res", "skip", "t", "energy", "crease", "H", "pan", "pdir", "rc", "lc", "wave", "lv"]) loc[n] = gl.getUniformLocation(prog, n);
     gl.uniform2fv(loc.pdir, pdir);
     return true;
   }
@@ -1845,12 +1887,15 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     else gl.uniform4f(loc.skip, 0, 0, 0, 0);
     gl.uniform1f(loc.t, clock);
     // The love burst (window.__mtLove) turns the light hot pink and violet
-    for (let i = 0; i < 36; i++) loveMix[i] = colors[i] + (LOVE_R[i] - colors[i]) * love;
-    gl.uniform1f(loc.energy, energy + love * 2.5);
+    gl.uniform1f(loc.energy, energy);
     gl.uniform1f(loc.crease, crease);
     gl.uniform3fv(loc.H, H);
     gl.uniform4fv(loc.pan, pan);
-    gl.uniform3fv(loc.rc, loveMix);
+    // The song's colors, and the like wash's where it has spread to
+    gl.uniform3fv(loc.rc, colors);
+    gl.uniform3fv(loc.lc, LOVE_R);
+    gl.uniform1f(loc.lv, love);
+    gl.uniform4fv(loc.wave, window.__mtWaveFor(hostRect, scale, h));
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     // Still: the main view's glass gets its frost from this frame
     if (still && glass) window.__mtFrost?.draw("silk", canvas, scale, glass);
@@ -2071,7 +2116,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 })();
 
 // Pyaar: the library dissolves into its light when you leave Spotify alone.
-// After 10 s with no mouse, wheel or key input anywhere in Spotify, a pane
+// After 7 s with no mouse, wheel or key input anywhere in Spotify, a pane
 // of thick glass slowly comes forward over the library: it frosts the text
 // and gently bends it at its rim (as the glass heart bends the banner, and
 // like the reference slab), the text melts away under it, and then the
@@ -2082,7 +2127,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 // continuous motion, so it never holds or snaps. Switched in the lights menu ("Clear library when idle").
 // Only the transitions cost anything; while cleared, the list isn't drawn.
 (function libraryVeil() {
-  const IDLE_MS = 10000;
+  const IDLE_MS = 7000;
   const NS = "http://www.w3.org/2000/svg";
   const RIM = 60;     // how far in from the panel's edge the glass bends the view
   const BEND = 26;    // displacement (gentle: the text softens and shifts, never warps)
@@ -2822,22 +2867,48 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   // cools back to the song's colors, with none of the drawings (no heart
   // swell, comet, sky, bars or glass heart). Same timing as the full burst:
   // in over LOVE_IN, held, then back over LOVE_OUT.
+  // It spreads from the liked heart: a wave with a soft edge (FEATHER px)
+  // grows over SPREAD seconds until it covers the window. Both lights take
+  // the wash's colors where the wave has reached (window.__mtLoveWave), and
+  // each area of the theme (the banner, the top bar, the library, the main
+  // view) turns as the wave arrives at it (data-mt-love on that area). Then
+  // it all cools back together, as before.
+  const SPREAD = 1.6, FEATHER = 280;
+  const AREAS = ['[data-testid="now-playing-bar"]', "#global-nav-bar", "#Desktop_LeftSidebar_Id", "#main-view", "#Desktop_PanelContainer_Id"];
   let wash = 0;
   function playColors() {
     const root = document.documentElement;
     root.removeAttribute("data-mt-love-out");
-    root.setAttribute("data-mt-love", "");
+    const heart = document.querySelector(".mt-like")?.getBoundingClientRect();
+    const x = heart ? heart.left + heart.width / 2 : 120, y = heart ? heart.top + heart.height / 2 : innerHeight - 50;
+    const far = Math.max(Math.hypot(x, y), Math.hypot(innerWidth - x, y), Math.hypot(x, innerHeight - y), Math.hypot(innerWidth - x, innerHeight - y)) + FEATHER;
+    // each area turns when the wave's middle reaches its nearest point
+    const areas = AREAS.map((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      const dx = Math.max(b.left - x, 0, x - b.right), dy = Math.max(b.top - y, 0, y - b.bottom);
+      return { el, at: Math.hypot(dx, dy) + FEATHER / 2 };
+    }).filter(Boolean);
     const t0 = performance.now();
     cancelAnimationFrame(wash);
     const step = (now) => {
       const t = (now - t0) / 1000;
       setLove(t);
-      if (t > LOVE_OUT[0] && root.hasAttribute("data-mt-love")) {
-        root.removeAttribute("data-mt-love");
+      const k = Math.min(1, t / SPREAD);
+      // eased out gently, so it visibly grows from the heart before it slows
+      const r = far * (1 - (1 - k) ** 2);
+      window.__mtLoveWave = { x, y, r, feather: FEATHER };
+      if (t < LOVE_OUT[0]) {
+        for (const a of areas) if (r >= a.at && !a.on) { a.el.setAttribute("data-mt-love", ""); a.on = true; }
+      } else if (!root.hasAttribute("data-mt-love-out")) {
+        // cooling back: everything fades to the song's colors together
         root.setAttribute("data-mt-love-out", "");
+        for (const a of areas) a.el.removeAttribute("data-mt-love");
       }
       if (t > LOVE_OUT[1]) {
         window.__mtLove = 0;
+        window.__mtLoveWave = null;
         wash = 0;
         // the theme's colors finish fading back (2.2 s from LOVE_OUT[0])
         setTimeout(() => !window.__mtLove && root.removeAttribute("data-mt-love-out"), 1000);

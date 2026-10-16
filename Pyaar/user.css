@@ -834,8 +834,10 @@ body :is(span, p, a, h1, h2, h3, h4, button, input, div, li, label) {
   100% { transform: scale(1); }
 }
 
-/* The whole theme turns hot for a moment: snaps in, cools back slowly */
-html[data-mt-love] {
+/* The theme turns hot for a moment. The like wash sets data-mt-love on each
+ * area (banner, top bar, library, main view) as its wave reaches it; the
+ * full burst sets it on <html>. Snaps in, cools back slowly. */
+[data-mt-love] {
   --mt-art: #ff40e4 !important;
   --mt-art-light: #ffb8f5 !important;
   --mt-art-dark: #1e0c52 !important;
