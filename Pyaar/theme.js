@@ -207,6 +207,27 @@
 // slow CSS loops below, both shaders and the progress bar all follow it.
 window.__mtBeat = (now) => Math.floor(now * 30 / 1000);
 
+// Pyaar: element sizes for the lights, kept by a ResizeObserver. Reading
+// clientWidth/clientHeight every frame forced the page to recalculate its
+// styles and layout in the middle of the frame (2.5 ms a frame, and up to
+// ~45 ms on big pages like Liked Songs); the observer reports changes after
+// layout instead, so nothing is forced.
+window.__mtSize = (() => {
+  const sizes = new WeakMap();
+  const ro = new ResizeObserver((entries) => {
+    for (const e of entries) sizes.set(e.target, { w: e.target.clientWidth, h: e.target.clientHeight });
+  });
+  return (el) => {
+    let size = sizes.get(el);
+    if (!size) {
+      size = { w: el.clientWidth, h: el.clientHeight };
+      sizes.set(el, size);
+      ro.observe(el);
+    }
+    return size;
+  };
+})();
+
 // Pyaar: the light motion preset (the lights button beside Marketplace):
 // "full" moves everything; "balanced" is lighter for older PCs (the center
 // light at half resolution, still at 30fps since it's always moving and 15
@@ -274,7 +295,8 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 // Pyaar: the glass player bar's light takes the current song's colors.
 // Exposes the cover as --mt-cover, its main colors as --mt-art-*, its
 // distinct colors as --mt-p1..--mt-p5, and an 8-stop rainbow of the whole
-// artwork's colors in proportion as --mt-r1..--mt-r12 (used by the center light).
+// artwork's colors in proportion as window.__mtRainbow (12 rgb stops, read by the
+// center light's shader directly).
 (function glassLight() {
   function coverUrl() {
     const meta = window.Spicetify?.Player?.data?.item?.metadata;
@@ -301,6 +323,18 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   }
 
   const hsl = (h, s, l) => `hsl(${h.toFixed(0)} ${(s * 100).toFixed(0)}% ${(l * 100).toFixed(0)}%)`;
+  // An hsl() string from hsl() above as [r, g, b] in 0..1, rounded to whole
+  // 0..255 steps the way the browser computes it
+  function hslToRgb(str) {
+    const [h, sp, lp] = str.match(/[\d.]+/g).map(Number);
+    const sat = sp / 100, lit = lp / 100;
+    const a = sat * Math.min(lit, 1 - lit);
+    const f = (n) => {
+      const k = (n + h / 30) % 12;
+      return lit - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    };
+    return [f(0), f(8), f(4)].map((v) => Math.round(v * 255) / 255);
+  }
 
   // Reads the cover's real colors. Pixels are grouped into a few color
   // clusters (k-means); each cluster keeps its true hue and saturation, so
@@ -450,7 +484,10 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
       root.style.setProperty("--mt-art-light", c.light);
       root.style.setProperty("--mt-art-dark", c.dark);
       c.palette.forEach((color, i) => root.style.setProperty(`--mt-p${i + 1}`, color));
-      c.rainbow.forEach((color, i) => root.style.setProperty(`--mt-r${i + 1}`, color));
+      // The center light's 12 colors go straight to its shader (as rgb 0..1),
+      // not onto :root: only the shader uses them, and every :root change
+      // restyles the whole page
+      window.__mtRainbow = c.rainbow.map(hslToRgb);
     } catch {
       // The image wasn't ready (common right after startup): try again shortly
       if (current === url && (apply.retries = (apply.retries || 0) + 1) <= 5) {
@@ -1380,8 +1417,11 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     if (document.hidden) { last = now; return; }
     const host = attach();
     if (!host) return;
-    const w = Math.max(2, Math.round(host.clientWidth * SCALE));
-    const h = Math.max(2, Math.round(host.clientHeight * SCALE));
+    // (the panel's size from the shared observer: reading it here forced a
+    // style and layout recalculation every frame)
+    const size = window.__mtSize(host);
+    const w = Math.max(2, Math.round(size.w * SCALE));
+    const h = Math.max(2, Math.round(size.h * SCALE));
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
@@ -1439,7 +1479,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 // top bar, with a few broad panels tilting on their own rhythm. One grazing
 // light drifts slowly, so long, smooth bands of light come and go, with a
 // white sheen, a thin-film sheen in the artwork's own colors in proportion
-// (--mt-r1..12) and very fine, faint lines. Everywhere else stays black.
+// (window.__mtRainbow) and very fine, faint lines. Everywhere else stays black.
 // With "Follow the tempo" on in Pyaar Settings (off by default), only its
 // speed follows the song: the whole pattern moves faster or slower with the
 // song's tempo (window.PyaarSync.tempo). Nothing else in it reacts to the music.
@@ -1612,10 +1652,9 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 
   function readTheme() {
     const cs = getComputedStyle(document.documentElement);
-    for (let i = 0; i < 12; i++) {
-      const c = parseColor(cs.getPropertyValue("--mt-r" + (i + 1)));
-      if (c) target.set(c, i * 3);
-    }
+    // The 12 colors from glassLight (window.__mtRainbow, rgb 0..1)
+    const rainbow = window.__mtRainbow;
+    if (rainbow) for (let i = 0; i < 12; i++) if (rainbow[i]) target.set(rainbow[i], i * 3);
     const e = parseFloat(cs.getPropertyValue("--mt-energy"));
     if (Number.isFinite(e)) energy = e;
 
@@ -1685,8 +1724,10 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     if (!host?.isConnected) host = document.querySelector(".Root__top-container");
     if (!host) return;
     if (canvas.parentElement !== host) host.prepend(canvas);
-    const w = Math.max(2, Math.round(host.clientWidth * scale));
-    const h = Math.max(2, Math.round(host.clientHeight * scale));
+    // (the container's size from the shared observer, not read every frame)
+    const size = window.__mtSize(host);
+    const w = Math.max(2, Math.round(size.w * scale));
+    const h = Math.max(2, Math.round(size.h * scale));
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
@@ -1942,10 +1983,10 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 // and gently bends it at its rim (as the glass heart bends the banner, and
 // like the reference slab), the text melts away under it, and then the
 // glass recedes, leaving only the library light and its music. Any input
-// brings the text back the same way, a little quicker. It's a crossfade:
-// only opacity and a slight scale move (the GPU eases them on its own, so
-// it stays smooth however busy the page is), and the stages overlap so it
-// never snaps. Switched in the lights menu ("Clear library when idle").
+// brings the text back the same way, quicker. It's a crossfade: only
+// opacity and a slight scale move (the GPU eases them on its own, so it
+// stays smooth however busy the page is), and the stages overlap into one
+// continuous motion, so it never holds or snaps. Switched in the lights menu ("Clear library when idle").
 // Only the transitions cost anything; while cleared, the list isn't drawn.
 (function libraryVeil() {
   const IDLE_MS = 10000;
@@ -2050,17 +2091,18 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     veiled = true;
     lib.classList.remove("mt-veil-back", "mt-veil-recede", "mt-veil-rest");
     lib.classList.add("mt-veil-on");
-    // The glass comes forward over 3.4 s...
+    // One continuous breath, about 4.5 s: the glass comes forward (2.2 s),
+    // the text melts away under it from 0.6 s (1.8 s), and from 1.8 s,
+    // before it has fully arrived, the glass is already receding into the
+    // light (2.6 s), so it never stops and holds
     requestAnimationFrame(() => requestAnimationFrame(() => lib.classList.add("mt-veil-glass")));
-    // ...the text melts away under it from 2 s (over 3 s)...
-    later(2000, () => lib.classList.add("mt-veil-gone"));
-    // ...and from 4.6 s the glass recedes into the light (over 4.2 s)
-    later(4600, () => { lib.classList.add("mt-veil-recede"); lib.classList.remove("mt-veil-glass"); });
-    later(9000, () => lib.classList.add("mt-veil-rest"));
+    later(600, () => lib.classList.add("mt-veil-gone"));
+    later(1800, () => { lib.classList.add("mt-veil-recede"); lib.classList.remove("mt-veil-glass"); });
+    later(4600, () => lib.classList.add("mt-veil-rest"));
   }
 
-  // Returning, the same way, quicker (about 3 s): the glass comes forward,
-  // the text forms under it, and the glass recedes leaving it sharp
+  // Returning, the same breath, quicker (about 1.6 s): the glass comes
+  // forward, the text forms under it, and the glass recedes leaving it sharp
   function reveal() {
     const lib = host();
     veiled = false;
@@ -2069,9 +2111,9 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
     lib.classList.remove("mt-veil-rest", "mt-veil-recede");
     lib.classList.add("mt-veil-on", "mt-veil-back");
     requestAnimationFrame(() => lib.classList.add("mt-veil-glass"));
-    later(450, () => lib.classList.remove("mt-veil-gone"));
-    later(1250, () => { lib.classList.add("mt-veil-recede"); lib.classList.remove("mt-veil-glass"); });
-    later(3200, () => lib.classList.remove("mt-veil-on", "mt-veil-back", "mt-veil-recede"));
+    later(200, () => lib.classList.remove("mt-veil-gone"));
+    later(600, () => { lib.classList.add("mt-veil-recede"); lib.classList.remove("mt-veil-glass"); });
+    later(1800, () => lib.classList.remove("mt-veil-on", "mt-veil-back", "mt-veil-recede"));
   }
 
   // Not while something needs the library or the pointer: a menu, a dialog,

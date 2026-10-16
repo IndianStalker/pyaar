@@ -42,18 +42,6 @@
 @property --mt-p4 { syntax: "<color>"; inherits: true; initial-value: #b06bff; }
 @property --mt-p5 { syntax: "<color>"; inherits: true; initial-value: #ffd36b; }
 /* The artwork's colors in proportion, for the center light (theme.js) */
-@property --mt-r1 { syntax: "<color>"; inherits: true; initial-value: #808080; }
-@property --mt-r2 { syntax: "<color>"; inherits: true; initial-value: #808080; }
-@property --mt-r3 { syntax: "<color>"; inherits: true; initial-value: #808080; }
-@property --mt-r4 { syntax: "<color>"; inherits: true; initial-value: #808080; }
-@property --mt-r5 { syntax: "<color>"; inherits: true; initial-value: #808080; }
-@property --mt-r6 { syntax: "<color>"; inherits: true; initial-value: #808080; }
-@property --mt-r7 { syntax: "<color>"; inherits: true; initial-value: #808080; }
-@property --mt-r8 { syntax: "<color>"; inherits: true; initial-value: #808080; }
-@property --mt-r9 { syntax: "<color>"; inherits: true; initial-value: #808080; }
-@property --mt-r10 { syntax: "<color>"; inherits: true; initial-value: #808080; }
-@property --mt-r11 { syntax: "<color>"; inherits: true; initial-value: #808080; }
-@property --mt-r12 { syntax: "<color>"; inherits: true; initial-value: #808080; }
 
 :root {
   --mt-energy: 1;
@@ -65,7 +53,8 @@
  * :root. On :root every frame of it restyled the whole page, ~7,300
  * elements, and the window dropped to ~7 fps for 1.5 s on each new song.
  * :root takes the new colors at once; these fade to them. The shaders read
- * :root and ease on their own, so --mt-r1..12 need no transition. Spotify's
+ * :root and ease on their own (the center light's 12 colors aren't CSS at all;
+ * theme.js hands them to it directly). Spotify's
  * own opacity transition on the banner and top bar is kept. The library
  * fades a private copy instead (--mt-lib-dark, see its panel and slab), so
  * its ~740 list elements aren't restyled every frame. */
@@ -101,9 +90,7 @@
 
 /* Let the light through the top bar and the center panels (not the library) */
 #global-nav-bar,
-#main-view > div,
-.Root__right-sidebar,
-.Root__top-container > [class]:has(> .Root__right-sidebar) {
+#main-view > div {
   background: transparent !important;
 }
 
@@ -851,18 +838,6 @@ html[data-mt-love] {
   --mt-p3: #9654ff !important;
   --mt-p4: #ff8cf6 !important;
   --mt-p5: #7a5cff !important;
-  --mt-r1: #ff40e4 !important;
-  --mt-r2: #ff6af2 !important;
-  --mt-r3: #ff2496 !important;
-  --mt-r4: #ff40e4 !important;
-  --mt-r5: #c04dff !important;
-  --mt-r6: #9654ff !important;
-  --mt-r7: #ff6af2 !important;
-  --mt-r8: #ff40d8 !important;
-  --mt-r9: #ff8cf6 !important;
-  --mt-r10: #7a5cff !important;
-  --mt-r11: #ff2496 !important;
-  --mt-r12: #ff40e4 !important;
   --mt-fade: 0.4s;
 }
 
@@ -2219,8 +2194,8 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
   /* a gentle sine ease, so it starts and settles softly */
   transition:
-    opacity 3.4s cubic-bezier(0.37, 0, 0.63, 1),
-    transform 3.4s cubic-bezier(0.37, 0, 0.63, 1);
+    opacity 2.2s cubic-bezier(0.37, 0, 0.63, 1),
+    transform 2.2s cubic-bezier(0.37, 0, 0.63, 1);
 }
 
 /* A faint bright rim, like the slab's edge in the reference */
@@ -2241,17 +2216,17 @@ html[data-mt-paused] [data-testid="playback-progressbar"] .progress-bar {
 
 /* The panel's contents melt away under the glass, and form again */
 #Desktop_LeftSidebar_Id > nav > div > * {
-  transition: opacity 3s cubic-bezier(0.37, 0, 0.63, 1);
+  transition: opacity 1.8s cubic-bezier(0.37, 0, 0.63, 1);
 }
 
 #Desktop_LeftSidebar_Id.mt-veil-on > .mt-veil { visibility: visible; }
 #Desktop_LeftSidebar_Id.mt-veil-glass > .mt-veil { opacity: 1; transform: scale(1); }
 #Desktop_LeftSidebar_Id.mt-veil-gone > nav > div > * { opacity: 0; }
-/* Receding is slower still, so the light comes through gently */
-#Desktop_LeftSidebar_Id.mt-veil-recede > .mt-veil { transition-duration: 4.2s, 4.2s; }
+/* Receding is a little slower, so the light comes through gently */
+#Desktop_LeftSidebar_Id.mt-veil-recede > .mt-veil { transition-duration: 2.6s, 2.6s; }
 #Desktop_LeftSidebar_Id.mt-veil-rest > .mt-veil { visibility: hidden; }
 
 /* Coming back: the same moves, quicker */
-#Desktop_LeftSidebar_Id.mt-veil-back > .mt-veil { transition-duration: 1s, 1s; }
-#Desktop_LeftSidebar_Id.mt-veil-back.mt-veil-recede > .mt-veil { transition-duration: 1.8s, 1.8s; }
-#Desktop_LeftSidebar_Id.mt-veil-back > nav > div > * { transition-duration: 1.4s; }
+#Desktop_LeftSidebar_Id.mt-veil-back > .mt-veil { transition-duration: 0.6s, 0.6s; }
+#Desktop_LeftSidebar_Id.mt-veil-back.mt-veil-recede > .mt-veil { transition-duration: 1s, 1s; }
+#Desktop_LeftSidebar_Id.mt-veil-back > nav > div > * { transition-duration: 0.9s; }
