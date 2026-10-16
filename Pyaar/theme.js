@@ -563,7 +563,7 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   const KEY = "pyaar:settings";
   // Music sync and the center light's tempo start off; they are turned on in
   // Pyaar Settings. The lights start in Full motion (the lights button).
-  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false, lightMode: "full", libraryVeil: true, libraryGlass: "frosted" };
+  const DEFAULTS = { musicSync: false, syncIntensity: "normal", centerLight: true, lightTempo: false, lightMode: "full", libraryVeil: true };
   const state = { ...DEFAULTS };
   let saved = {};
   try {
@@ -574,6 +574,8 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
   // The old "Library light: 30 fps" choice became the Balanced preset
   if (saved.libraryFps === 30 && !saved.lightMode) state.lightMode = "balanced";
   delete state.libraryFps;
+  // ("Library glass" was offered briefly and removed; the glass stays frosted)
+  delete state.libraryGlass;
   const listeners = new Set();
 
   const S = (window.PyaarSettings = {
@@ -588,13 +590,6 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
 
   const LEVELS = [["subtle", "Subtle"], ["normal", "Normal"], ["strong", "Strong"]];
   const MODES = [["full", "Full"], ["balanced", "Balanced"], ["still", "Still"]];
-  const GLASS = [["clear", "Clear"], ["soft", "Soft"], ["frosted", "Frosted"]];
-
-  // The library's glass (lights menu): how much the slab over the library
-  // light blurs and tints it. user.css reads html[data-mt-glass].
-  const applyGlass = () => { document.documentElement.dataset.mtGlass = state.libraryGlass || "frosted"; };
-  applyGlass();
-  S.on((key) => key === "libraryGlass" && applyGlass());
 
   // The settings window: frosted glass in the song's colors (user.css,
   // "Pyaar Settings window"). Grows into the full visual controls later.
@@ -760,7 +755,6 @@ window.__mtMode = () => window.PyaarSettings?.get("lightMode") || "full";
       segRow("Motion", "Balanced and Still are lighter on older PCs", "lightMode", MODES),
       switchRow("Center light", "The moving light behind the center", "centerLight"),
       switchRow("Follow the tempo", "The center light speeds up and slows down with the song's tempo", "lightTempo", "centerLight"),
-      segRow("Library glass", "Clearer glass shows more of the music light", "libraryGlass", GLASS),
       switchRow("Clear library when idle", "After 10 s without the mouse, the library's text dissolves into its light", "libraryVeil"));
     // The rest (music sync and its style) is in the full window
     const more = el("button", "mt-set-row mt-set-link");

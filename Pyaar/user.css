@@ -340,25 +340,10 @@ html:not([data-mt-flow]) #Desktop_LeftSidebar_Id {
   background: transparent !important;
 }
 
-/* The library glass levels (lights menu, html[data-mt-glass]): clearer
- * glass blurs and tints the library light less, so the music shows more.
- * Frosted is the original. */
-html[data-mt-glass="soft"] #Desktop_LeftSidebar_Id > nav > div {
-  --mt-slab-blur: 12px;
-  --mt-slab-tint: 16%;
-  --mt-slab-shade: 0.07;
-}
-
-html[data-mt-glass="clear"] #Desktop_LeftSidebar_Id > nav > div {
-  --mt-slab-blur: 4px;
-  --mt-slab-tint: 10%;
-  --mt-slab-shade: 0.04;
-}
-
 /* The glass slab */
 #Desktop_LeftSidebar_Id > nav > div {
   --mt-lib-dark: var(--mt-art-dark);
-  transition: --mt-lib-dark var(--mt-fade) ease, backdrop-filter 0.8s ease;
+  transition: --mt-lib-dark var(--mt-fade) ease;
   height: 100%;
   border-radius: 20px 20px 0 0 !important;
   background:
@@ -368,10 +353,10 @@ html[data-mt-glass="clear"] #Desktop_LeftSidebar_Id > nav > div {
     radial-gradient(90% 40% at 20% 0%, rgba(255, 255, 255, 0.09), transparent 70%),
     linear-gradient(155deg, rgba(255, 255, 255, 0.06), transparent 40%),
     /* The glass body: slightly smoky so text stays readable, warmed by the song */
-    color-mix(in srgb, var(--mt-lib-dark) var(--mt-slab-tint, 22%), rgba(0, 0, 0, var(--mt-slab-shade, 0.1))) !important;
+    color-mix(in srgb, var(--mt-lib-dark) 22%, rgba(0, 0, 0, 0.1)) !important;
   /* Frosting: heavy blur, lifted and slightly flattened like light
    * scattering inside the glass */
-  backdrop-filter: blur(var(--mt-slab-blur, 22px)) saturate(1.25) brightness(1.05);
+  backdrop-filter: blur(22px) saturate(1.25) brightness(1.05);
   box-shadow:
     /* Light catching the rim: brightest on top, then the lit left side */
     inset 0 1px 0 rgba(255, 255, 255, 0.5),
